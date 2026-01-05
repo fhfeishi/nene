@@ -8,3 +8,16 @@ wheels/
 
 # Virtual environments
 .venv
+.env 
+
+# 
+logs_dir/
+temp/
+
+# data
+**/docs/
+**/datadb/
+
+# 
+third_party/
+zztest/
