@@ -15,6 +15,144 @@ class StreamingMessageManager{
      * 流式消息管理器
      * 职责：管理流式消息的创建、更新、完成，与外部状态解耦
      */
+    constructor(chatContainer){
+        this.container = chatContainer;   // 
+        this.currentMessage = null;
+        this.accumulatedText = '';
+        this.isActive = false;            
+
+    }
+
+    /**
+     * 开始新的流式消息
+     * @param {boolean} isVoiceMessage  - 
+     */
+    start(isVoiceMessage = false){
+        
+        this.cleanup();
+
+        this.currentMessage = this._createMessageElement(isVoiceMessage);
+        this.container.appendChild(this.currentMessage);
+        this.accumulatedText = '';
+        this.isActive = true;
+
+        this._scrollToBottom();
+        return this.currentMessage
+    }
+
+    append(chunk){
+        if (!chunk) return;
+
+        const messageElement = this._getActiveMessage();
+        if(!messageElement){
+            console.warn('⚠️ [StreamingMessage] 无活跃消息，忽略 chunk');
+            return;
+        }
+
+        this.accumulatedText += chunk;
+
+        //更新显示
+        const textDiv = messageElement.querySelector('.message-text');
+        if(textDiv){
+            textDiv.innerHTML = this._formatText(this.accumulatedText)+
+                                '<span class="streaming-cursor">|</span>';
+        }
+        this._scrollToBottom();
+    }
+
+
+    // user speech  -->   text    ------ RAG --> textAnswer
+    //                      --STT  ===>>  messageBubble  --user
+    //  ===>>  messageBubble  --agent    
+    //             ====>> streaming speech --TTS
+
+
+    finish(fullText=null, createActions=null){
+
+        const messageElement = this._getActiveMessage();
+
+        if(!messageElement){
+            console.warn('⚠️ [StreamingMessage] finish 时找不到消息元素');
+            this._cleanupOraphanedMessages();
+            return;
+        }
+        const finalText = fullText || this.accumulatedText 
+        
+        // 更新内容 不带光标
+        const textDiv = messageElement.querySelector('.message-text')
+        if(textDiv){
+            // 直接设置innerHTML 不包含任何光标元素
+            textDiv.innerHTML = this._formatText(finalText)
+        }
+        
+        // 移除流式标记
+        delete messageElement.dataset.streaming;
+        delete messageElement.dataset.rawText;
+
+        // 添加操作按钮
+        if (createActions && finalText){
+            const contentDiv = messageElement.querySelector('.message-content');
+            if (contentDiv){
+                // 移除可能存在的旧按钮 ？
+                const existingActions = contentDiv.querySelector('.message-actions');
+                if(existingActions){
+                    existingActions.remove();
+                }
+                contentDiv.appendChild(createActions(finalText))
+            }
+        }
+
+        // 重置状态
+        this.currentMessage = null;
+        this.accumulatedText = '';
+        this.isActive = false;
+
+        this._scrollToBottom();
+
+    }
+
+    cleanup(showIntertupted=false){
+
+        const messageElement = this._getActiveMessage();
+        if (messageElement){
+            const textDiv = messageElement.querySelector('.message-text');
+            const currentText = this.accumulatedText || messageElement.dataset.rawText || '';
+
+            if (currentText){
+                let html = this_formatText(currentText);
+                if (showIntertupted){
+                    html += '<span class="interrupted-mark">(已停止)</span>';
+                }
+                textDiv.innerHTML = html;
+                delete messageElement.dataset.streaming;
+            }else{
+                // 
+                messageElement.remove();
+            }
+        }
+
+        this._cleanupOraphanedMessages();
+
+        this.currentMessage = null;
+        this.accumulatedText = '';
+        this.isActive = false;
+    }
+
+    _getActiveMessage(){
+        if(this.currentMessage ** this.currentMessage.dataset.streaming === 'true'){
+            return this.currentMessage;
+        }
+
+        const allStreaming = this.container.querySelector('.message[data-streaming="true"]');
+        if (allStreaming.length > 0){
+            return allStreaming[allStreaming.length - 1];
+        }
+        return null;
+    }
+
+
+
+
 }
 
 
