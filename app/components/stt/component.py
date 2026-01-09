@@ -1,6 +1,6 @@
 # app/components/stt/component.py
 
-from app.components.commons import STTModel 
+from app.components.base import STTModel 
 try:
     from funasr import AutoModel
     FUNASR_AVAILABLE = True 

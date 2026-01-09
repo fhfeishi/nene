@@ -28,17 +28,15 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 
-from app.config import get_rag_config
+from app.core.config import get_rag_config
 from components.rag.component import build_chain, load_retriever, answer_question
 from components.api import VoiceInterface, IicRealtimeSTT, EdgeTTS
 
-
 # 配置日志
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s | %(levelname)s | %(name)s | %(message)s"
-)
+from app.core.logger import setup_logging
+setup_logging()
 logger = logging.getLogger(__name__)
+logger.info("系统启动成功！配置已生效。")
 
 
 # =============================================================================

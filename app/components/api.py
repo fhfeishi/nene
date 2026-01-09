@@ -4,7 +4,7 @@ from dotenv import load_dotenv
 import pyaudio 
 from typing import Dict 
 
-from commons import STTModel, TTSModel
+from base import STTModel, TTSModel
 from stt.component import IicRealtimeSTT
 from tts.component import EdgeTTS
 

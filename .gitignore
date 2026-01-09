@@ -9,10 +9,12 @@ wheels/
 # Virtual environments
 .venv
 .env 
+*.log 
 
 # 
 logs_dir/
 temp/
+**/node_modules/*
 
 # data
 **/docs/

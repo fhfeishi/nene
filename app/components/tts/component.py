@@ -1,6 +1,6 @@
 # app/components/tts/component.py 
 
-from app.components.commons import TTSModel
+from app.components.base import TTSModel
 # edge-tts MicroSoft
 import edge_tts
 

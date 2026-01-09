@@ -1,8 +1,27 @@
-# app/commons.py
+# app/base.py
 
-from langchain_huggingface import HuggingFaceEmbeddings, ChatHuggingFace
-from typing import Callable, Optional
+from typing import Callable, Optional,AsyncGenerator, List, Dict 
 from abc import ABC, abstractmethod 
+
+
+class BaseRAG(ABC):
+    @abstractmethod
+    async def astream(self, query: str, history: List[Dict]) -> AsyncGenerator[str, None]:
+        """流式输出文本"""
+        pass
+
+class BaseTTS(ABC):
+    @abstractmethod
+    async def synthesize_stream(self, text: str) -> AsyncGenerator[bytes, None]:
+        """流式输出音频 (bytes)"""
+        pass
+
+class BaseSTT(ABC):
+    @abstractmethod
+    async def transcribe(self, audio_bytes: bytes) -> str:
+        """音频转文字"""
+        pass
+
 
 # llm models 
 def inst_llm():
