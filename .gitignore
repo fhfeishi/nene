@@ -12,6 +12,7 @@ wheels/
 *.log 
 
 # 
+tiktoken_cache/
 logs_dir/
 temp/
 **/node_modules/*

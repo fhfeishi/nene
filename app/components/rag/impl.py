@@ -1,1 +1,1 @@
-from app.components.base 
+from app.components.base import BaseRAG

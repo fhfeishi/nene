@@ -11,29 +11,13 @@ class BaseRAG(ABC):
         pass
 
 class BaseTTS(ABC):
-    @abstractmethod
-    async def synthesize_stream(self, text: str) -> AsyncGenerator[bytes, None]:
-        """流式输出音频 (bytes)"""
-        pass
-
-class BaseSTT(ABC):
+    """文本转语音基类"""
     @abstractmethod
     async def transcribe(self, audio_bytes: bytes) -> str:
         """音频转文字"""
         pass
 
-
-# llm models 
-def inst_llm():
-    pass 
-
-
-# embeding models 
-def inst_embed():
-    pass 
-
-# 语音转文本基类
-class STTModel(ABC):
+class BaseSTT(ABC):
     """语音转文本基类"""
     
     @abstractmethod
@@ -52,16 +36,19 @@ class STTModel(ABC):
     def stop_streaming(self) -> str:
         """停止流式识别"""
         raise NotImplementedError("Streaming not implemented for this STT model")
-    
 
-# 文本转语音基类
-class TTSModel(ABC):
-    """文本转语音基类"""
+
+# llm models 
+def inst_llm():
+    pass 
+
+
+# embeding models 
+def inst_embed():
+    pass 
+
+
     
-    @abstractmethod
-    def synthesize(self, text: str) -> bytes:
-        """将文本转换为语音"""
-        pass
 
 
 
