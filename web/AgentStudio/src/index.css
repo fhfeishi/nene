@@ -1,0 +1,41 @@
+/* src/index.css  */
+@import "tailwindcss";
+
+@theme {
+  /* 定义语义化颜色，这样 HTML 里直接写 bg-brand-bg 即可 */
+  --color-brand-bg: var(--bg-main);
+  --color-brand-surface: var(--bg-surface);
+  --color-brand-text: var(--text-main);
+  --color-brand-border: var(--border-main);
+
+  --color-brand-primary: #2563eb;
+  --color-brand-sidebar: var(--bg-sidebar);
+}
+
+/* 默认：白天模式变量 */
+:root {
+  --bg-main: #f8fafc;       /* Slate 50 */
+  --bg-surface: #ffffff;    /* White */
+  --bg-sidebar: #0b0f1a;    /* 深色侧边栏保持专业感，或改为浅色 */
+  --text-main: #0f172a;     /* Slate 900 */
+  --border-main: #e2e8f0;   /* Slate 200 */
+}
+
+/* 夜晚模式变量：当 html 标签拥有 .dark 类时激活 */
+.dark {
+  --bg-main: #020617;       /* Slate 950 */
+  --bg-surface: #0f172a;    /* Slate 900 */
+  --bg-sidebar: #020617;    /* 更深的侧边栏 */
+  --text-main: #f1f5f9;     /* Slate 100 */
+  --border-main: #1e293b;   /* Slate 800 */
+}
+
+@layer base {
+  html, body, #root {
+    height: 100%;
+    width: 100%;
+    transition: background-color 0.3s ease, color 0.3s ease; /* 增加平滑过渡 */
+    background-color: var(--bg-main);
+    color: var(--text-main);
+  }
+}

@@ -12,6 +12,8 @@ wheels/
 *.log 
 
 # 
+*.idea
+*.vscode
 logs_dir/
 temp/
 **/node_modules/*
