@@ -8,9 +8,19 @@ dependencies = [
     "edge-tts>=7.2.7",
     "jupyter>=1.1.1",
     "langchain>=1.2.0",
-    "torch>=2.9.1",
+    "torch>=2.7.1",
 ]
 
 [[tool.uv.index]]
 url = "https://pypi.tuna.tsinghua.edu.cn/simple"
 default = true
+
+[[tool.uv.index]]
+name = "pytorch"
+url = "https://download.pytorch.org/whl/cu128"
+explicit = true
+
+[tool.uv.sources]
+torch = { index = "pytorch" }
+torchvision = { index = "pytorch" }
+torchaudio = { index = "pytorch" }
