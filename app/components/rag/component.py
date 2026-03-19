@@ -15,10 +15,7 @@ from langchain_core.runnables import RunnablePassthrough
 from langchain_core.output_parsers import StrOutputParser
 
 
-def setup_logging() -> None:
-    level = os.getenv("LOG_LEVEL", "INFO").upper()
-    logging.basicConfig(level=level, format="%(asctime)s | %(levelname)s | %(message)s")
-
+logger = logging.getLogger(__name__)
 
 def build_embeddings():
     backend = os.getenv("EMBEDDING_BACKEND", "ollama").strip().lower()
@@ -54,7 +51,7 @@ def build_llm():
 
 
 def load_retriever():
-    from app.config import get_rag_config
+    from app.core.config import get_rag_config
     
     embeddings = build_embeddings()
     config = get_rag_config()
@@ -92,7 +89,6 @@ def build_chain():
     inputs: {"question": str, "chat_history": str}
     """
     load_dotenv()
-    setup_logging()
 
     retriever = load_retriever()
     llm = build_llm()
@@ -153,7 +149,6 @@ def build_streaming_chain():
     构建支持流式输出的RAG链
     """
     load_dotenv()
-    setup_logging()
 
     retriever = load_retriever()
     llm = build_llm()
@@ -202,7 +197,7 @@ def build_streaming_chain():
 
 # 在 rag_chain.py 里加一个
 def build_generation_chain_only():
-    load_dotenv(); setup_logging()
+    load_dotenv()
     llm = build_llm()
     system_template = (
         "【核心规则】直接输出答案，禁止任何思考过程、推理步骤、分析说明。\n\n"

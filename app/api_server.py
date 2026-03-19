@@ -55,7 +55,7 @@ class VoiceTranscribeRequest(BaseModel):
 # FastAPI 应用初始化
 # =============================================================================
 
-app = FastAPI(title="博物馆RAG WebSocket服务", version="2.0.0")
+app = FastAPI(title="ChatRAG WebSocket服务", version="2.0.0")
 
 app.add_middleware(
     CORSMiddleware,
