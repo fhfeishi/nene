@@ -14,10 +14,14 @@ from langchain_core.prompts import ChatPromptTemplate
 from langchain_core.runnables import RunnablePassthrough
 from langchain_core.output_parsers import StrOutputParser
 
+from modelscope.models import Model 
+from modelscope.pipelines import pipeline 
+from modelscope.utils.constant import Tasks 
 
 logger = logging.getLogger(__name__)
 
 def build_embeddings():
+    # EMBEDDING_BACKEND：ollama、 huggingface、 modelscope 
     backend = os.getenv("EMBEDDING_BACKEND", "ollama").strip().lower()
     model_name = os.getenv("EMBEDDING_MODEL", "qwen3-embedding:0.6b")
     if backend == "ollama":
