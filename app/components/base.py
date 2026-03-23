@@ -4,22 +4,26 @@ from typing import Callable, Optional,AsyncGenerator, List, Dict
 from abc import ABC, abstractmethod 
 import os 
 
-
+# base class: RAG system
 class BaseRAG(ABC):
+    """RAG 系统基类"""
     @abstractmethod
     async def astream(self, query: str, history: List[Dict]) -> AsyncGenerator[str, None]:
         """流式输出文本"""
         pass
 
+
+# base class: TTS system
 class BaseTTS(ABC):
-    """文本转语音基类"""
+    """文本转语音 TTS 基类"""
     @abstractmethod
     async def transcribe(self, audio_bytes: bytes) -> str:
         """音频转文字"""
         pass
 
+# base class: STT system
 class BaseSTT(ABC):
-    """语音转文本基类"""
+    """语音转文本 STT 基类"""
     
     @abstractmethod
     def transcribe(self, audio_data: bytes) -> str:
@@ -39,13 +43,15 @@ class BaseSTT(ABC):
         raise NotImplementedError("Streaming not implemented for this STT model")
 
 
-# llm models 
-def inst_llm():
+# init method: llm models 
+def inst_llm(): 
+    """实例化 llm 模型"""
     pass 
 
 
-# embeding models 
-def inst_embed():
+# init method: embeding models 
+def inst_embed(): 
+    """实例化 embed 模型"""    
     pass 
 
 
