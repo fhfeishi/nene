@@ -4,7 +4,7 @@ from dotenv import load_dotenv
 import pyaudio 
 from typing import Dict 
 
-from base import STTModel, TTSModel
+from app.components.base import BaseSTT, BaseTTS
 from stt.component import IicRealtimeSTT
 from tts.component import EdgeTTS
 
@@ -24,8 +24,8 @@ class VoiceInterface:
     
     def __init__(
         self, 
-        stt_model: STTModel = None, 
-        tts_model: TTSModel = None, 
+        stt_model: BaseSTT = None, 
+        tts_model: BaseTTS = None, 
         voice: str = "zh-CN-XiaoxiaoNeural"
     ):
         load_dotenv()
@@ -53,7 +53,7 @@ class VoiceInterface:
             format="%(asctime)s | %(levelname)s | %(message)s"
         )
 
-    def _create_stt(self) -> STTModel:
+    def _create_stt(self) -> BaseSTT:
         """创建STT模型"""
         try:
             return IicRealtimeSTT()
@@ -61,12 +61,12 @@ class VoiceInterface:
             logger.error(f"创建STT失败: {e}", exc_info=True)
             
             # 返回占位STT
-            class BasicSTT(STTModel):
+            class BasicSTT(BaseSTT):
                 def transcribe(self, audio_data: bytes) -> str:
                     return "STT不可用，请检查funasr依赖"
             return BasicSTT()
 
-    def _create_tts(self) -> TTSModel:
+    def _create_tts(self) -> BaseTTS:
         """创建TTS模型"""
         return EdgeTTS()
 

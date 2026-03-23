@@ -1,18 +1,16 @@
 # app/components/stt/component.py
 
-from app.components.base import STTModel 
-try:
-    from funasr import AutoModel
-    FUNASR_AVAILABLE = True 
-except:
-    FUNASR_AVAILABLE = False 
+from app.components.base import BaseSTT 
+
+from funasr import AutoModel
+FUNASR_AVAILABLE = True 
     
 from typing import Callable, Optional, Dict, Any
 import logging 
 import numpy as np 
 
 
-class IicRealtimeSTT(STTModel):
+class IicRealtimeSTT(BaseSTT):
     """
     使用 FunASR Paraformer Online 模型实现的一次性 + 流式 STT。
     - 默认模型: iic/speech_paraformer-large_asr_nat-zh-cn-16k-common-vocab8404-online

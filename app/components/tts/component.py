@@ -1,6 +1,6 @@
 # app/components/tts/component.py 
 
-from app.components.base import TTSModel
+from app.components.base import BaseTTS
 # edge-tts MicroSoft
 import edge_tts
 
@@ -14,7 +14,7 @@ from typing import Optional, List, Any, Dict, AsyncGenerator
 
 logger = logging.getLogger(__name__)
 
-class EdgeTTS(TTSModel):
+class EdgeTTS(BaseTTS):
     """
     Edge TTS 文本转语音类 - 使用微软Edge的在线TTS服务
     

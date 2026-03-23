@@ -1,16 +1,15 @@
 # settings 
 
-from dataclasses import dataclass
+from pydantic import BaseModel
 
-@dataclass
-class EmbeddingConfig:
+class EmbeddingConfig(BaseModel):
     model_name: str
     model_path: str
     model_type: str
     model_params: dict
 
-@dataclass
-class EmbeddingModel:
+
+class EmbeddingModel(BaseModel):
     model_name: str
     model_path: str
     model_type: str

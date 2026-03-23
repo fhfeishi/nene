@@ -4,6 +4,7 @@ from pathlib import Path
 from typing import List, Literal, Optional
 from pydantic import BaseModel, Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
+from app.constants import milvusdb_root, qdrantdb_root, postgreSQLdb_root
 
 # ==========================================
 # 1. 基础模块配置 (BaseModel: 仅定义数据结构和默认值)
@@ -19,8 +20,8 @@ class LogConfig(BaseModel):
     file_retention: str = "7 days"
     
 class LLMConfig(BaseModel):
-    model: str = "Qwen/Qwen2-7B-Instruct"  # 可替换为你的默认模型
-    backend: Literal["modelscope", "huggingface", "vllm"] = "modelscope"
+    model: str = "Qwen/Qwen3-0.6B"  # 可替换为你的默认模型
+    backend: Literal["modelscope", "huggingface", "vllm"] = "huggingface"
     infer_engine: str = ""
     load_mode: Literal["cached", "local", "cloud"] = "cached"
     device: Literal["cuda", "cpu"] = "cuda"

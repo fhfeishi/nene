@@ -1,3 +1,4 @@
+# app/api_server.py
 
 import os
 import logging
@@ -55,7 +56,7 @@ def build_llm():
 
 
 def load_retriever():
-    from app.core.config import get_rag_config
+    from config.config import get_rag_config
     
     embeddings = build_embeddings()
     config = get_rag_config()

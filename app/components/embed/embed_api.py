@@ -1,5 +1,4 @@
-
-from app.components.base import get_huggingface_path, get_modelscope_path
+from app.components.utils_model_load import get_huggingface_path, get_modelscope_path
  
 from fastapi import FastAPI
 from pydantic import BaseModel

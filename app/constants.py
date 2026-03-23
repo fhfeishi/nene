@@ -10,11 +10,16 @@ pymilvusdb_root: Path = root_dir / "datas/data_db/pymilvusdb"  # py-lite 版本�
 milvusdb_root: Path = root_dir / "datas/data_db/milvusdb"
 qdrantdb_root: Path = root_dir / "datas/data_db/qdrant_db"
 postgreSQLdb_root: Path = root_dir / "datas/data_db/postgreSQL_db"
+chromadb_root.mkdir(parents=True, exist_ok=True)
+faissdb_root.mkdir(parents=True, exist_ok=True)
+pymilvusdb_root.mkdir(parents=True, exist_ok=True)
+milvusdb_root.mkdir(parents=True, exist_ok=True)
+qdrantdb_root.mkdir(parents=True, exist_ok=True)
+postgreSQLdb_root.mkdir(parents=True, exist_ok=True)
 
+
+# --没什么用，暂且放这儿 --------------
 # local cache model root 
 ## cli: modelscope/hf download model-xx
 MODELSCOPE_ROOT = r"E:\local_models\modelscope\models"
 HUGGINGFACE_ROOT = r"E:\local_models\huggingface\cache\hub"
-
-
-

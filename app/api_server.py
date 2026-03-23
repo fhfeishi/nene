@@ -1,5 +1,6 @@
+# app/api_server.py
+
 """
-# app/server.py
 WebSocket服务器 - 支持流式输出的RAG聊天服务
 
     - 流式TTS的架构：LLM流式输出 -> 句子分割 -> Edge-TTS合成 -> 发送音频
@@ -28,13 +29,13 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 
-from app.core.config import get_rag_config
+from config.config import get_rag_config
 from components.rag.component import build_chain, load_retriever, answer_question
 from components.api import VoiceInterface, IicRealtimeSTT, EdgeTTS
 
 # 配置日志
 from app.core.logger import setup_logging
-setup_logging()
+
 logger = logging.getLogger(__name__)
 logger.info("系统启动成功！配置已生效。")
 
