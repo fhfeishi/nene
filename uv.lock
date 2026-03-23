@@ -1398,7 +1398,7 @@ requires-dist = [
     { name = "edge-tts", specifier = ">=7.2.7" },
     { name = "jupyter", specifier = ">=1.1.1" },
     { name = "langchain", specifier = ">=1.2.0" },
-    { name = "torch", specifier = ">=2.9.1" },
+    { name = "torch", specifier = ">=2.7.1" },
 ]
 
 [[package]]
