@@ -11,6 +11,11 @@ wheels/
 .env 
 *.log 
 
+# Audio files
+*.wav
+*.mp3
+*.mp4
+
 # 
 *.idea
 *.vscode
