@@ -6,9 +6,9 @@ from pydantic import BaseModel, Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 from app.constants import milvusdb_root, qdrantdb_root, postgreSQLdb_root
 
-# ==========================================
+# ===============================================================================
 # 1. 基础模块配置 (BaseModel: 仅定义数据结构和默认值)
-# ==========================================
+# ===============================================================================   
 
 class LogConfig(BaseModel):
     level: Literal["DEBUG", "INFO", "WARNING", "ERROR"] = "INFO"
@@ -21,8 +21,8 @@ class LogConfig(BaseModel):
     
 class LLMConfig(BaseModel):
     model: str = "Qwen/Qwen3-0.6B"  # 可替换为你的默认模型
-    backend: Literal["modelscope", "huggingface", "vllm"] = "huggingface"
-    infer_engine: str = ""
+    backend: Literal["modelscope", "huggingface"] = "huggingface"
+    infer_engine: Literal["ollama", "transformers", "llama-cpp", "vllm", "cloud-openai"] = "transformers"
     load_mode: Literal["cached", "local", "cloud"] = "cached"
     device: Literal["cuda", "cpu"] = "cuda"
     # 预留多卡配置字段，默认分配 4 张卡
@@ -34,15 +34,20 @@ class LLMConfig(BaseModel):
 class EmbedConfig(BaseModel):
     model: str = "BAAI/bge-large-zh-v1.5"
     device: Literal["cuda", "cpu"] = "cuda"
+    backend: Literal["modelscope", "huggingface"] = "huggingface"
+    infer_engine: Literal["ollama", "transformers", "llama-cpp", "vllm", "cloud-openai"] = "transformers"
     device_ids: List[int] = Field(default_factory=lambda: [0])
 
 class STTConfig(BaseModel):
     model: str = "SenseVoiceSmall"
+    backend: Literal["modelscope", "huggingface"] = "huggingface"
+    
     device: Literal["cuda", "cpu"] = "cuda"
     api_key: Optional[str] = None
 
 class TTSConfig(BaseModel):
     model: str = "CosyVoice"
+    backend: Literal["modelscope", "huggingface"] = "huggingface"
     device: Literal["cuda", "cpu"] = "cuda"
     api_key: Optional[str] = None
 
@@ -52,9 +57,8 @@ class ChunkConfig(BaseModel):
     separators: List[str] = Field(default_factory=lambda: ["\n\n", "\n", "。", "！", "？"])
 
 class VectorDBConfig(BaseModel):
-    provider: Literal["chroma", "milvus", "faiss"] = "chroma"
-    persist_directory: Path = Path("data/vector_store")
-    collection_name: str = "nene_collection"
+    provider: Literal["chroma", "milvus", "qdrant"] = "chroma"
+    
 
 # ==========================================
 # 2. 全局根配置 (BaseSettings: 负责统合模块并读取环境变量)
