@@ -1,4 +1,4 @@
-# app/components/utils_model.py
+# app/components/utils_model_load.py
 
 import os 
 import dotenv

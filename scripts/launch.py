@@ -1,6 +1,6 @@
 # scripts/launch.py
 
-from app.core.logger import setup_logging
+from app.core.logger import setup_logging, setup_logger 
 
 
 
