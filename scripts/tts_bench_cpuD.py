@@ -79,7 +79,7 @@ class KokoroTTSController:
         logger.info(f"[Kokoro Benchmark] 正在加载 Kokoro 模型到 {self.device.upper()}...")
         t0 = time.time()
         
-        # 传入 repo_id 消除警告
+        # 传入 repo_id 消除警告  hexgrad/Kokoro-82M-v1.1-zh  hexgrad/Kokoro-82M
         kwargs = {
             "lang_code": 'z', 
             "repo_id": 'hexgrad/Kokoro-82M'
