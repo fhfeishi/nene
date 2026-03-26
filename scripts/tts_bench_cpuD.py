@@ -93,7 +93,7 @@ class KokoroTTSController:
     def _warmup(self):
         logger.info("[Kokoro Benchmark] 正在预热...")
         # 静默预热
-        list(self.pipeline("测试", voice='zf_xiaoxiao', speed=1.0))
+        list(self.pipeline("测试", voice='zf_xiaoxiao', speed=1.0)) # zf_001 
         if self.device == "cuda":
             torch.cuda.synchronize()
         logger.info("[Kokoro Benchmark] 预热完成。")
@@ -151,7 +151,7 @@ def main():
     
     for i, sentence in enumerate(sentences):
         # 官方可选中文音色：zf_xiaoxiao (女声), zf_xiaoyi (女声), zm_yunjian (男声)
-        audio, sr = tts_controller.generate(sentence, i, voice='zf_xiaoxiao')
+        audio, sr = tts_controller.generate(sentence, i, voice='zf_xiaoxiao')  # zf_xiaoxiao  || zf_001
         if audio is not None:
             player.add_to_queue(audio)
 
