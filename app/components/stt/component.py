@@ -8,7 +8,7 @@ FUNASR_AVAILABLE = True
 from typing import Callable, Optional, Dict, Any
 import logging 
 import numpy as np 
-
+import asyncio
 
 class IicRealtimeSTT(BaseSTT):
     """
@@ -245,3 +245,133 @@ class IicRealtimeSTT(BaseSTT):
         else:
             return self.transcribe(audio_chunk)
 
+
+
+
+class iic_stt(BaseSTT):
+    """
+    基于 FunASR Paraformer Online 模型的流式/非流式 STT。
+    """
+    
+    def __init__(
+        self,
+        model_id: str = "iic/speech_paraformer-large_asr_nat-zh-cn-16k-common-vocab8404-online",
+        model_revision: str = "v2.0.4",
+        device: str = "cuda:0",
+        sample_rate: int = 16000,
+        chunk_size: Optional[list] = None,
+        encoder_chunk_look_back: int = 2,
+        decoder_chunk_look_back: int = 1,
+    ):
+        if not FUNASR_AVAILABLE:
+            raise ImportError("funasr 未安装。请运行: pip install funasr modelscope")
+
+        self.sample_rate = sample_rate
+        self.chunk_size = chunk_size or [0, 10, 5]
+        self.encoder_chunk_look_back = encoder_chunk_look_back
+        self.decoder_chunk_look_back = decoder_chunk_look_back
+        self._model_chunk_stride = self.chunk_size[1] * 960
+
+        logging.info(f"Loading FunASR model: {model_id} on {device}")
+        
+        # 模型加载保持同步，通常在系统启动阶段进行
+        self._model = AutoModel(
+            model=model_id,
+            task="asr",
+            batch_size=1,
+            # model_revision=model_revision,
+            device=device,
+            disable_update=True,
+            # trust_remote_mode=True,
+        )
+
+        # 流式状态
+        self._streaming_active = False
+        self._cache = {}
+        self._audio_buffer = np.array([], dtype=np.float32)
+
+    # ========== 核心推理逻辑 (包装为同步内部方法) ==========
+    
+    def _sync_generate(self, input_data: np.ndarray, is_final: bool, cache: dict) -> str:
+        """底层实际调用 FunASR 的同步方法"""
+        try:
+            rec_result = self._model.generate(
+                input=input_data,
+                cache=cache,
+                is_final=is_final,
+                chunk_size=self.chunk_size,
+                encoder_chunk_look_back=self.encoder_chunk_look_back,
+                decoder_chunk_look_back=self.decoder_chunk_look_back,
+            )
+            if rec_result and "text" in rec_result[0]:
+                return (rec_result[0]["text"] or "").strip()
+            return ""
+        except Exception as e:
+            logging.error(f"FunASR Generation Failed: {e}", exc_info=True)
+            return ""
+
+    # ========== BaseSTT 异步接口实现 ==========
+
+    async def transcribe(self, audio_data: bytes) -> str:
+        if not audio_data:
+            return ""
+
+        speech = np.frombuffer(audio_data, dtype=np.int16).astype(np.float32) / 32768.0
+        if speech.size == 0:
+            return ""
+
+        # 使用 to_thread 避免大段音频推理阻塞异步事件循环
+        text = await asyncio.to_thread(self._sync_generate, speech, True, {})
+        return text
+
+    async def start_streaming(self) -> None:
+        self._streaming_active = True
+        self._cache = {}
+        self._audio_buffer = np.array([], dtype=np.float32)
+        logging.info("STT Streaming Context Initialized.")
+
+    async def send_audio_frame(self, audio_frame: bytes) -> tuple[str, bool]:
+        if not self._streaming_active or not audio_frame:
+            return "", False
+
+        frame = np.frombuffer(audio_frame, dtype=np.int16).astype(np.float32) / 32768.0
+        self._audio_buffer = np.concatenate([self._audio_buffer, frame])
+
+        text_result = ""
+        # 只要缓冲区满了就切下一块去识别
+        while self._audio_buffer.size >= self._model_chunk_stride:
+            input_chunk = self._audio_buffer[: self._model_chunk_stride]
+            self._audio_buffer = self._audio_buffer[self._model_chunk_stride :]
+
+            # 非阻塞调用
+            text_result = await asyncio.to_thread(
+                self._sync_generate, input_chunk, False, self._cache
+            )
+
+        # 返回当前累计的中间文本，is_final 此时为 False
+        return text_result, False
+
+    async def force_break_sentence(self) -> str:
+        if not self._streaming_active:
+            return ""
+        
+        # 发送空数据强制打断
+        final_text = await asyncio.to_thread(
+            self._sync_generate, np.array([], dtype=np.float32), True, self._cache
+        )
+        
+        # 重置 cache 以备下一句，保留 buffer
+        self._cache = {}
+        return final_text
+
+    async def stop_streaming(self) -> str:
+        final_text = ""
+        if self._streaming_active and self._audio_buffer.size > 0:
+            final_text = await asyncio.to_thread(
+                self._sync_generate, self._audio_buffer, True, self._cache
+            )
+
+        self._streaming_active = False
+        self._cache = {}
+        self._audio_buffer = np.array([], dtype=np.float32)
+        return final_text

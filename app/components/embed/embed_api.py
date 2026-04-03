@@ -44,3 +44,10 @@ pooling = models.Pooling(word_embedding.get_word_embedding_dimension(),
                          pooling_mode_mean_tokens=True)
 embedder = SentenceTransformer(modules=[word_embedding, pooling], device="cpu")
 """
+
+
+
+class embed_interface:
+    
+    
+    pass 

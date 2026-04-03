@@ -5,6 +5,24 @@ from transformers import AutoTokenizer, AutoModelForCausalLM, pipeline
 
 from app.components.utils_model_load import get_huggingface_path, get_modelscope_path
 
+
+class llm_interface:
+    """ llm interface class """
+    
+    pass 
+
+    
+
+
+
+
+
+
+
+
+
+
+
 # ── 选择你要用的路径 ──────────────────────────────────────
 # llm_path = get_modelscope_path("Qwen/Qwen3.5-2B")
 llm_path = get_huggingface_path("Qwen/Qwen3.5-2B")

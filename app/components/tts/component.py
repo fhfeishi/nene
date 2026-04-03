@@ -1,8 +1,6 @@
 # app/components/tts/component.py 
 
 from app.components.base import BaseTTS
-# edge-tts MicroSoft
-import edge_tts
 
 import re 
 import time 
@@ -28,8 +26,9 @@ class EdgeTTS(BaseTTS):
     - Edge-TTS 是微软的云端TTS服务，延迟约200-500ms
     - 通过流式合成 + 预加载，可实现近乎实时的语音输出
     """
+    
     # 中英文句子结束标点
-    SENTENCE_ENDINGS = re.compile(r'(?<=[。！？.!?;；])\s*')
+    SENTENCE_ENDINGS = re.compile(r'(?<=[。！？!?;；])\s*')
     
     # 可用的中文语音列表（常用）
     CHINESE_VOICES = {
@@ -62,6 +61,14 @@ class EdgeTTS(BaseTTS):
             rate: 语速调整。例如 "+10%" (加快10%), "-10%" (减慢10%)
             volume: 音量调整。例如 "+10%" (增大10%), "-10%" (减小10%)
         """
+        # edge-tts MicroSoft 
+        try:
+            import edge_tts
+        except ImportError as e:
+            logger.error(f"找不到 edge_tts 模块，请尝试执行 pip install edge-tts。具体报错: {e}")
+        # except Exception as e:
+        #     logger.error(f"导入 edge_tts 失败: {e}")
+            
         self.voice = voice
         self.rate = rate
         self.volume = volume
@@ -315,3 +322,27 @@ class EdgeTTS(BaseTTS):
         """获取常用中文语音列表"""
         return cls.CHINESE_VOICES.copy()
 
+
+
+class kokoroTTS(BaseTTS):
+    try:
+        from kokoro import KPipeline
+    except ImportError as e:
+        logger.info(f"❌ {e} 请先安装依赖: pip install kokoro soundfile")
+    
+    
+    pass 
+
+
+
+class qwenTTS(BaseTTS):
+    from qwen_tts import Qwen3TTSModel
+    
+    
+    pass 
+
+
+class cloudTTS(BaseTTS):
+    
+    
+    pass 

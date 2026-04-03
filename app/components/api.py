@@ -7,7 +7,7 @@ from typing import Dict
 from app.components.base import BaseSTT, BaseTTS
 from stt.component import IicRealtimeSTT
 from tts.component import EdgeTTS
-
+from config.config import settings
 
 logger = logging.getLogger(__name__)
 

@@ -1,61 +1,106 @@
 ########################################################################
 # 1) 全局默认策略
-# 所有文本文件默认在检出和提交时都标准化为 LF
-# 这解决了 Windows (CRLF) 和 Mac/Linux (LF) 的跨平台协作问题
 ########################################################################
 * text=auto eol=lf
 
 ########################################################################
-# 2) 强制“只当作二进制处理”的文件
-# 禁止 Git 尝试对这些文件进行行尾转换或文本 Diff
+# 2) 强制二进制的文件
 ########################################################################
-*.ipynb -text
-
-# 图片、字体等
+# 图片
 *.png  -text
 *.jpg  -text
 *.jpeg -text
 *.gif  -text
 *.webp -text
 *.ico  -text
+*.bmp  -text
+
+# 字体
 *.eot  -text
 *.ttf  -text
 *.otf  -text
 *.woff -text
 *.woff2 -text
 
+# 音频（语音 RAG 系统）
+*.mp3  -text
+*.wav  -text
+*.ogg  -text
+*.flac -text
+*.aac  -text
+*.m4a  -text
+
+# 模型文件
+*.bin  -text
+*.onnx -text
+*.pt   -text
+*.pth  -text
+*.safetensors -text
+*.gguf -text
+*.pkl  -text
+
+# 文档（二进制格式）
+*.pdf  -text
+*.docx -text
+*.doc  -text
+*.xlsx -text
+
 ########################################################################
-# 3) 源代码 / Web 资源
-# 【修改】强制使用 LF。
-# 这样无论在 Windows 还是 Mac，编辑器看到的都是 LF，
-# 配合 Prettier 等工具极其顺滑，且不仅限于 web，
-# Bash 脚本在 Linux 容器里跑也不会报错。
+# 3) 源代码 — 强制文本 + LF
 ########################################################################
+# 前端 (React / TypeScript)
 *.ts   text eol=lf
 *.tsx  text eol=lf
 *.js   text eol=lf
 *.jsx  text eol=lf
 *.css  text eol=lf
 *.html text eol=lf
-*.json text eol=lf
-*.md   text eol=lf
 *.svg  text eol=lf
 
+# 后端 (Python / FastAPI)
+*.py   text eol=lf
+*.ipynb text eol=lf
+# grpc
+*.proto text eol=lf
+
 ########################################################################
-# 4) Windows 脚本
-# 【保留】这是唯一真正需要 CRLF 的地方
-# 即使在 Linux 上 checkout 下来，它也保持 CRLF，
-# 确保如果文件被传到 Windows CMD 运行是正常的。
+# 4) 配置与数据文件 — 强制文本 + LF
+########################################################################
+*.json  text eol=lf
+*.yaml  text eol=lf
+*.yml   text eol=lf
+*.toml  text eol=lf
+*.cfg   text eol=lf
+*.ini   text eol=lf
+*.txt   text eol=lf
+*.md    text eol=lf
+*.csv   text eol=lf
+*.xml   text eol=lf
+
+# Shell & Docker（必须在 Linux 运行）
+*.sh              text eol=lf
+Dockerfile        text eol=lf
+docker-compose.*  text eol=lf
+.dockerignore     text eol=lf
+
+# Python 锁文件（行尾影响哈希）
+poetry.lock  text eol=lf
+Pipfile      text eol=lf
+Pipfile.lock text eol=lf
+
+# Node.js 锁文件（行尾影响哈希）
+package-lock.json text eol=lf
+yarn.lock         text eol=lf
+pnpm-lock.yaml    text eol=lf
+
+# Git 自身
+.gitignore     text eol=lf
+.gitattributes text eol=lf
+.editorconfig  text eol=lf
+
+########################################################################
+# 5) Windows 脚本 — 唯一需要 CRLF 的地方
 ########################################################################
 *.bat  text eol=crlf
 *.cmd  text eol=crlf
 *.ps1  text eol=crlf
-
-########################################################################
-# 5) 依赖清单与锁文件
-# 强制 LF，避免不同系统生成不同的哈希值
-########################################################################
-package.json       text eol=lf
-package-lock.json  text eol=lf
-yarn.lock          text eol=lf
-pnpm-lock.yaml     text eol=lf

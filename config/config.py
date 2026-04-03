@@ -42,7 +42,7 @@ class STTConfig(BaseModel):
     model: str = "SenseVoiceSmall"
     backend: Literal["modelscope", "huggingface"] = "huggingface"
     
-    device: Literal["cuda", "cpu"] = "cuda"
+    device: Literal["cuda", "cpu"] = "cpu"
     api_key: Optional[str] = None
 
 class TTSConfig(BaseModel):

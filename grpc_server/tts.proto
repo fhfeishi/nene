@@ -1,0 +1,22 @@
+// tts.proto
+syntax = "proto3";
+
+// 给你的项目起个专属的包名
+package nene.voice;
+
+// 定义我们的 TTS 服务
+service TTSService {
+  // 定义一个名为 Synthesize 的方法：输入文本，输出音频
+  rpc Synthesize (TTSRequest) returns (TTSResponse) {}
+}
+
+// 客户端发送的请求格式
+message TTSRequest {
+  string text = 1;
+}
+
+// 服务端返回的响应格式
+message TTSResponse {
+  // bytes 用于传输二进制文件（如 wav/mp3 数据）
+  bytes audio_data = 1;
+}
