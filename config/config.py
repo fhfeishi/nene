@@ -1,10 +1,11 @@
 # app/config/config.py  # 语音RAG 系统的配置文件
 
+from ast import Dict
 from pathlib import Path
-from typing import List, Literal, Optional
-from pydantic import BaseModel, Field
+from typing import Any, Callable, List, Literal, Optional, Dict 
+from pydantic import BaseModel, Field, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
-from app.constants import milvusdb_root, qdrantdb_root, postgreSQLdb_root
+from app.constants import root_dir, temp_dir,milvusdb_root, qdrantdb_root, postgreSQLdb_root, chromadb_root
 
 # ===============================================================================
 # 1. 基础模块配置 (BaseModel: 仅定义数据结构和默认值)
@@ -14,41 +15,73 @@ class LogConfig(BaseModel):
     level: Literal["DEBUG", "INFO", "WARNING", "ERROR"] = "INFO"
     format: str = "%(asctime)s - %(levelname)s - %(filename)s[:%(lineno)d] - %(message)s"
     datefmt: str = "%Y-%m-%d %H:%M:%S"
-    # 使用 pathlib.Path 管理路径更加优雅且不易出错
-    file_path: Path = Path("temp/nene.log")
+    file_path: Path = temp_dir / "nene.log"
     file_max_size: str = "10 MB"
     file_retention: str = "7 days"
     
 class LLMConfig(BaseModel):
-    model: str = "Qwen/Qwen3-0.6B"  # 可替换为你的默认模型
-    backend: Literal["modelscope", "huggingface"] = "huggingface"
-    infer_engine: Literal["ollama", "transformers", "llama-cpp", "vllm", "cloud-openai"] = "transformers"
-    load_mode: Literal["cached", "local", "cloud"] = "cached"
+    # model id 
+    model_id: str = "Qwen/Qwen3-1.7B"  
+    # 模型下载来源：modelscope 或 huggingface
+    hub_backend: Literal["modelscope", "huggingface"] = "modelscope"
+    # 核心：推理引擎选择
+    infer_engine: Literal["transformers", "llama-cpp", "vllm", "cloud-api"] = "llama-cpp"
+    
+    # device 配置
     device: Literal["cuda", "cpu"] = "cuda"
-    # 预留多卡配置字段，默认分配 4 张卡
-    device_ids: List[int] = Field(default_factory=lambda: [0, 1, 2, 3]) 
-    server: str = "localhost"
-    port: int = 8000
-    api_key: Optional[str] = None  # 将由外层统一从 .env 注入
+    device_ids: List[int] = Field(default_factory=lambda: [0])
+    
+    # 云端 API / 外部服务配置 (当 infer_engine 为 cloud-api 时使用)
+    base_url: Optional[str] = None
+    api_key: Optional[str] = None  
+    
+    # 本地服务对外暴露的端口
+    server_host: str = "127.0.0.1"
+    server_port: int = 8000
 
 class EmbedConfig(BaseModel):
-    model: str = "BAAI/bge-large-zh-v1.5"
+    # model id 
+    model_id: str = "BAAI/bge-large-zh-v1.5"
+    hub_backend: Literal["modelscope", "huggingface"] = "huggingface"
+    # Embedding 通常用 transformers 或专门的句向量库，llama-cpp 也支持 GGUF 格式的 embedding
+    infer_engine: Literal["transformers", "sentence-transformers", "llama-cpp", "cloud-api"] = "sentence-transformers"
+    
+    # device 配置
     device: Literal["cuda", "cpu"] = "cuda"
-    backend: Literal["modelscope", "huggingface"] = "huggingface"
-    infer_engine: Literal["ollama", "transformers", "llama-cpp", "vllm", "cloud-openai"] = "transformers"
     device_ids: List[int] = Field(default_factory=lambda: [0])
+    
+    # for cloud-api
+    base_url: Optional[str] = None
+    api_key: Optional[str] = None
 
 class STTConfig(BaseModel):
-    model: str = "SenseVoiceSmall"
-    backend: Literal["modelscope", "huggingface"] = "huggingface"
+    # model id 
+    model_id: str = "SenseVoiceSmall"
+    hub_backend: Literal["modelscope", "huggingface"] = "huggingface"
+    # normal 代表使用 FunASR 等官方 SDK 直接加载
+    infer_engine: Literal["normal", "cloud-api"] = "normal"
     
-    device: Literal["cuda", "cpu"] = "cpu"
+    # device 配置
+    device: Literal["cuda", "cpu"] = "cuda"
+    device_ids: List[int] = Field(default_factory=lambda: [0])
+    
+    # for cloud-api
+    base_url: Optional[str] = None
     api_key: Optional[str] = None
 
 class TTSConfig(BaseModel):
-    model: str = "CosyVoice"
-    backend: Literal["modelscope", "huggingface"] = "huggingface"
+    # model id 
+    model_id: str = "iic/CosyVoice-300M"
+    hub_backend: Literal["modelscope", "huggingface"] = "huggingface"
+    # normal 代表使用 qwen_tts 等官方 SDK 直接加载
+    infer_engine: Literal["normal", "cloud-api"] = "normal"
+    
+    # device 配置
     device: Literal["cuda", "cpu"] = "cuda"
+    device_ids: List[int] = Field(default_factory=lambda: [0])
+    
+    # for cloud-api
+    base_url: Optional[str] = None
     api_key: Optional[str] = None
 
 class ChunkConfig(BaseModel):
@@ -59,6 +92,22 @@ class ChunkConfig(BaseModel):
 class VectorDBConfig(BaseModel):
     provider: Literal["chroma", "milvus", "qdrant"] = "chroma"
     
+    host: str = "127.0.0.1"
+    port: int = 8000
+    api_key: Optional[str] = None
+    
+    collection_name: str = "nene_collection"
+    persist_directory: Optional[Path] = chromadb_root # milvusdb_root, qdrantdb_root, postgreSQLdb_root
+    
+    embedding_function: Optional[Callable] = None
+    
+    # retriever 配置
+    similarity: Literal["cosine", "euclidean"] = "cosine"  # 相似度计算方式
+    distance_threshold: float = 0.5  # 距离阈值
+    top_k: int = 10   # 检索结果数量
+    search_kwargs: Dict[str, Any] = Field(default_factory=dict)  # 检索参数
+    metadata_fields: List[str] = Field(default_factory=lambda: ["source_file", "chunk_type"])  # 元数据字段，用于过滤
+    metadata_filter: Optional[Dict[str, Any]] = None  # 元数据过滤，用于过滤
 
 # ==========================================
 # 2. 全局根配置 (BaseSettings: 负责统合模块并读取环境变量)
@@ -87,6 +136,24 @@ class NeneSettings(BaseSettings):
         env_nested_delimiter='__' 
     )
 
+    @model_validator(mode='after')
+    def validate_cloud_api(self) -> 'NeneSettings':
+        """
+        验证逻辑：如果某个模块使用了 cloud-api 作为引擎，最好要有 api_key。
+        这里可以放置跨字段的全局校验逻辑。
+        """
+        if self.llm.infer_engine == "cloud-api" and not self.llm.api_key:
+            raise Warning("LLM engine is cloud-api, but api_key is not set")
+            # pass # 也可以选择在此处报 Warning 或强制抛出 ValueError
+        return self
+    
 # 实例化全局配置对象，供其他文件 import 应用
 settings = NeneSettings()
 
+
+
+# --- 测试打印 (可删除) ---
+if __name__ == "__main__":
+    print(f"Project Root: {root_dir}")
+    print(f"LLM Engine: {settings.llm.infer_engine}")
+    print(f"TTS Model: {settings.tts.model_id}")

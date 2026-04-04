@@ -1,75 +1,54 @@
-import os, torch
-from fastapi import FastAPI
-from pydantic import BaseModel
-from transformers import AutoTokenizer, AutoModelForCausalLM, pipeline
+# app/components/llm/llm_api.py
 
-from app.components.utils_model_load import get_huggingface_path, get_modelscope_path
+import logging
+from app.components.llm.component import QwenLLM
+# from app.components.llm.component import OtherLLM 
 
+logger = logging.getLogger(__name__)
 
-class llm_interface:
-    """ llm interface class """
+class LLMInterface:
+    """ 
+    LLM 的统一入口（工厂类）。
+    负责根据全局配置，返回对应的 LLM 实例。
+    """
     
-    pass 
+    @staticmethod
+    def get_instance(cfg):
+        """
+        根据 cfg.llm.model_id_or_path 判断返回哪个具体的实现类。
+        """
+        model_name = cfg.llm.model_id.lower()
+        
+        if "qwen" in model_name:
+            logger.info("Routing to QwenLLM wrapper.")
+            return QwenLLM(cfg)
+        
+        # 预留其他模型的扩展空间
+        # elif "llama" in model_name:
+        #     return LlamaLLM(cfg)
+        
+        else:
+            # 默认 fallback 或抛出异常
+            logger.warning(f"No specific wrapper found for {model_name}, using default QwenLLM fallback.")
+            return QwenLLM(cfg)
 
+# ====================================================================
+# 使用示例 (伪代码，展示如何在 FastAPI 或主程序中调用)
+# ====================================================================
+"""
+from config.config import settings
+from app.components.llm.llm_api import LLMInterface
+
+# 1. 获取统一的 LLM 实例
+llm = LLMInterface.get_instance(settings)
+
+# 2. 在 FastAPI 的异步路由中调用
+@app.post("/chat")
+async def chat_endpoint(request: Request):
+    user_text = await request.json()
+    prompt = user_text.get("prompt")
     
-
-
-
-
-
-
-
-
-
-
-
-# ── 选择你要用的路径 ──────────────────────────────────────
-# llm_path = get_modelscope_path("Qwen/Qwen3.5-2B")
-llm_path = get_huggingface_path("Qwen/Qwen3.5-2B")
-
-print(f"Loading model from: {llm_path}")
-
-# ── 加载模型（CPU 模式，去掉 device_map）────────────────────
-tokenizer = AutoTokenizer.from_pretrained(llm_path)
-
-model = AutoModelForCausalLM.from_pretrained(
-    llm_path,
-    torch_dtype=torch.float32,  # 注意是 torch_dtype，不是 dtype
-    low_cpu_mem_usage=True,     # 减少加载时的峰值内存占用
-)
-# CPU 环境下不需要 device_map，直接确保模型在 cpu 上
-model = model.to("cpu")
-model.eval()
-
-pipe = pipeline(
-    "text-generation",
-    model=model,
-    tokenizer=tokenizer,
-    max_new_tokens=256,
-    do_sample=True,
-    temperature=0.7,
-)
-
-# ── FastAPI ───────────────────────────────────────────────
-app = FastAPI()
-
-class ChatRequest(BaseModel):
-    messages: list[dict]
-
-class ChatResponse(BaseModel):
-    content: str
-
-@app.post("/v1/chat", response_model=ChatResponse)
-def chat(req: ChatRequest):
-    prompt = tokenizer.apply_chat_template(
-        req.messages,
-        tokenize=False,
-        add_generation_prompt=True,
-    )
-    output = pipe(prompt)
-    generated = output[0]["generated_text"][len(prompt):]
-    return ChatResponse(content=generated.strip())
-
-if __name__ == "__main__":
-    import uvicorn
-    uvicorn.run(app, host="0.0.0.0", port=8001)
+    # 3. 将 llm.astream_chat 返回的异步生成器传递给 StreamingResponse
+    from fastapi.responses import StreamingResponse
+    return StreamingResponse(llm.astream_chat(prompt), media_type="text/event-stream")
+"""

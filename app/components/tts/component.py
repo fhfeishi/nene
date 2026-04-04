@@ -324,25 +324,190 @@ class EdgeTTS(BaseTTS):
 
 
 
-class kokoroTTS(BaseTTS):
-    try:
-        from kokoro import KPipeline
-    except ImportError as e:
-        logger.info(f"❌ {e} 请先安装依赖: pip install kokoro soundfile")
+class KokoroTTS(BaseTTS):
+    """
+    Kokoro 本地 TTS 封装
+    特点：轻量级，支持多语言，非常适合没有高端独立显卡的普通 Intel CPU/轻量 GPU 机器。
+    """
+    def __init__(self, cfg):
+        self.cfg = cfg.tts
+        logger.info("Initializing KokoroTTS...")
+        try:
+            from kokoro import KPipeline
+            # lang_code='z' 代表中文(Mandarin), 'a' 代表美式英文
+            self.pipeline = KPipeline(lang_code='z') 
+            # 默认音色配置
+            self.default_voice = "zh_female_xiaoxiao" 
+        except ImportError as e:
+            logger.error(f"❌ 导入 Kokoro 失败，请执行: pip install kokoro soundfile. 详情: {e}")
+            raise e
     
-    
-    pass 
+    async def _synthesize_async(self, text: str, voice: str) -> bytes:
+        """ 包装同步的 Kokoro 推理为异步，防止阻塞主事件循环 """
+        import soundfile as sf
+        import io
+
+        def sync_infer():
+            # generate 返回一个生成器，每个元素是 (graphemes, phonemes, audio)
+            generator = self.pipeline(text, voice=voice, speed=1.0, split_pattern=r'\n+')
+            audio_bytes = b""
+            for _, _, audio in generator:
+                # 将 numpy array 的音频数据转换为 WAV 字节流
+                with io.BytesIO() as wav_io:
+                    sf.write(wav_io, audio, 24000, format='WAV')
+                    audio_bytes += wav_io.getvalue()
+            return audio_bytes
+
+        return await asyncio.to_thread(sync_infer)
+
+    async def stream_sentences_async(
+        self, 
+        text_generator: AsyncGenerator[str, None],
+        voice: Optional[str] = None
+    ) -> AsyncGenerator[bytes, None]:
+        """ 复用流式断句逻辑 """
+        target_voice = voice or self.default_voice
+        sentence_buffer = ""
+        # 简单句号分割正则
+        split_pattern = re.compile(r'(?<=[。！？!?;；\n])\s*')
+
+        async for text_chunk in text_generator:
+            if not text_chunk: continue
+            sentence_buffer += text_chunk
+            
+            while True:
+                match = split_pattern.search(sentence_buffer)
+                if not match: break
+                
+                sentence = sentence_buffer[:match.end()].strip()
+                sentence_buffer = sentence_buffer[match.end():]
+                
+                if sentence:
+                    audio_data = await self._synthesize_async(sentence, target_voice)
+                    yield audio_data
+
+        if sentence_buffer.strip():
+            audio_data = await self._synthesize_async(sentence_buffer.strip(), target_voice)
+            yield audio_data
 
 
+
+class CosyVoiceTTS(BaseTTS):
+    """
+    阿里 CosyVoice 语音大模型 (支持高度拟人化，适合高配 Nvidia GPU 机器)
+    """
+    def __init__(self, cfg):
+        self.cfg = cfg.tts
+        logger.info("Initializing CosyVoiceTTS...")
+        try:
+            import sys
+            # 假设你已经将 CosyVoice 克隆到项目中或者安装在环境里
+            from cosyvoice.cli.cosyvoice import CosyVoice
+            from cosyvoice.utils.file_utils import load_wav
+            
+            # 模型路径来自 config.py
+            self.cosyvoice = CosyVoice(self.cfg.model_id_or_path)
+            self.default_spk = "中文女"
+        except ImportError as e:
+            logger.error(f"❌ 导入 CosyVoice 失败。详情: {e}")
+            raise e
+
+    async def stream_sentences_async(
+        self, 
+        text_generator: AsyncGenerator[str, None],
+        voice: Optional[str] = None
+    ) -> AsyncGenerator[bytes, None]:
+        # 与上面 Kokoro 类似的断句逻辑，但是 CosyVoice 原生提供了 inference_stream
+        # 可以直接利用其原生的流式推理
+        target_spk = voice or self.default_spk
+        
+        async def text_iterator():
+            async for chunk in text_generator:
+                yield chunk
+
+        # 注意：CosyVoice 的 inference_stream 是同步生成器，需要自行用线程池做异步包装。
+        # 这里为了演示核心思想，暂用最简单的单句异步模式：
+        sentence_buffer = ""
+        split_pattern = re.compile(r'(?<=[。！？!?;；\n])\s*')
+        import torchaudio
+        import io
+        
+        def sync_infer(text):
+            output = self.cosyvoice.inference_sft(text, target_spk)
+            # output 通常是一个包含音频 tensor 的字典
+            audio_tensor = output['tts_speech']
+            with io.BytesIO() as wav_io:
+                torchaudio.save(wav_io, audio_tensor, 22050, format="wav")
+                return wav_io.getvalue()
+
+        async for text_chunk in text_generator:
+            sentence_buffer += text_chunk
+            while True:
+                match = split_pattern.search(sentence_buffer)
+                if not match: break
+                sentence = sentence_buffer[:match.end()].strip()
+                sentence_buffer = sentence_buffer[match.end():]
+                if sentence:
+                    yield await asyncio.to_thread(sync_infer, sentence)
+                    
+        if sentence_buffer.strip():
+            yield await asyncio.to_thread(sync_infer, sentence_buffer.strip())
 
 class qwenTTS(BaseTTS):
     from qwen_tts import Qwen3TTSModel
     
-    
     pass 
 
 
-class cloudTTS(BaseTTS):
-    
-    
-    pass 
+class CloudTTS(BaseTTS):
+    """
+    云端 TTS API (兼容 OpenAI 标准的 v1/audio/speech 接口)
+    比如 DashScope(通义千问)、OpenAI、Minimax 等。
+    """
+    def __init__(self, cfg):
+        self.cfg = cfg.tts
+        logger.info("Initializing CloudTTS via API...")
+        try:
+            from openai import AsyncOpenAI
+            self.client = AsyncOpenAI(
+                api_key=self.cfg.api_key,
+                base_url=self.cfg.base_url
+            )
+            # 默认声音
+            self.default_voice = "alloy" 
+        except ImportError as e:
+            logger.error("❌ 缺少 openai 库，请执行 pip install openai")
+            raise e
+
+    async def _synthesize_async(self, text: str, voice: str) -> bytes:
+        response = await self.client.audio.speech.create(
+            model="tts-1", # 或者具体厂商的模型名
+            voice=voice,
+            input=text,
+            response_format="mp3"
+        )
+        return response.read()
+
+    async def stream_sentences_async(
+        self, 
+        text_generator: AsyncGenerator[str, None],
+        voice: Optional[str] = None
+    ) -> AsyncGenerator[bytes, None]:
+        target_voice = voice or self.default_voice
+        sentence_buffer = ""
+        split_pattern = re.compile(r'(?<=[。！？!?;；\n])\s*')
+
+        async for text_chunk in text_generator:
+            sentence_buffer += text_chunk
+            while True:
+                match = split_pattern.search(sentence_buffer)
+                if not match: break
+                sentence = sentence_buffer[:match.end()].strip()
+                sentence_buffer = sentence_buffer[match.end():]
+                if sentence:
+                    audio_data = await self._synthesize_async(sentence, target_voice)
+                    yield audio_data
+
+        if sentence_buffer.strip():
+            audio_data = await self._synthesize_async(sentence_buffer.strip(), target_voice)
+            yield audio_data
