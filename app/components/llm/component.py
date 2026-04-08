@@ -3,9 +3,15 @@
 from typing import AsyncGenerator
 from app.components.utils_model_load import get_huggingface_path, get_modelscope_path
 from config.config import settings
+from abc import ABC, abstractmethod
 
 import logging 
 logger = logging.getLogger(__name__)
+
+
+# base LLM class 
+
+
 
 class QwenLLM:
     """ qwen llm class """

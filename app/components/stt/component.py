@@ -10,6 +10,8 @@ import logging
 import numpy as np 
 import asyncio
 
+logger = logging.getLogger(__name__)
+
 class IicRealtimeSTT(BaseSTT):
     """
     使用 FunASR Paraformer Online 模型实现的一次性 + 流式 STT。
@@ -244,7 +246,6 @@ class IicRealtimeSTT(BaseSTT):
             return text
         else:
             return self.transcribe(audio_chunk)
-
 
 
 

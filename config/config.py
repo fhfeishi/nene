@@ -1,23 +1,22 @@
 # app/config/config.py  # 语音RAG 系统的配置文件
 
-from ast import Dict
 from pathlib import Path
 from typing import Any, Callable, List, Literal, Optional, Dict 
 from pydantic import BaseModel, Field, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
-from app.constants import root_dir, temp_dir,milvusdb_root, qdrantdb_root, postgreSQLdb_root, chromadb_root
+from app.constants import root_dir, temp_dir, milvusdb_root, qdrantdb_root, postgreSQLdb_root, chromadb_root
 
 # ===============================================================================
 # 1. 基础模块配置 (BaseModel: 仅定义数据结构和默认值)
 # ===============================================================================   
-
 class LogConfig(BaseModel):
     level: Literal["DEBUG", "INFO", "WARNING", "ERROR"] = "INFO"
-    format: str = "%(asctime)s - %(levelname)s - %(filename)s[:%(lineno)d] - %(message)s"
+    fmt: str = "%(asctime)s - %(levelname)s - %(filename)s[:%(lineno)d] - %(message)s"
     datefmt: str = "%Y-%m-%d %H:%M:%S"
     file_path: Path = temp_dir / "nene.log"
     file_max_size: str = "10 MB"
     file_retention: str = "7 days"
+    
     
 class LLMConfig(BaseModel):
     # model id 
@@ -39,6 +38,7 @@ class LLMConfig(BaseModel):
     server_host: str = "127.0.0.1"
     server_port: int = 8000
 
+
 class EmbedConfig(BaseModel):
     # model id 
     model_id: str = "BAAI/bge-large-zh-v1.5"
@@ -53,6 +53,7 @@ class EmbedConfig(BaseModel):
     # for cloud-api
     base_url: Optional[str] = None
     api_key: Optional[str] = None
+
 
 class STTConfig(BaseModel):
     # model id 
@@ -69,6 +70,7 @@ class STTConfig(BaseModel):
     base_url: Optional[str] = None
     api_key: Optional[str] = None
 
+
 class TTSConfig(BaseModel):
     # model id 
     model_id: str = "iic/CosyVoice-300M"
@@ -84,10 +86,12 @@ class TTSConfig(BaseModel):
     base_url: Optional[str] = None
     api_key: Optional[str] = None
 
+
 class ChunkConfig(BaseModel):
     chunk_size: int = 500
     chunk_overlap: int = 50
     separators: List[str] = Field(default_factory=lambda: ["\n\n", "\n", "。", "！", "？"])
+
 
 class VectorDBConfig(BaseModel):
     provider: Literal["chroma", "milvus", "qdrant"] = "chroma"
@@ -99,7 +103,7 @@ class VectorDBConfig(BaseModel):
     collection_name: str = "nene_collection"
     persist_directory: Optional[Path] = chromadb_root # milvusdb_root, qdrantdb_root, postgreSQLdb_root
     
-    embedding_function: Optional[Callable] = None
+    # embedding_function: Optional[Callable] = None  # 纯粹的接收 List[float] 就好了
     
     # retriever 配置
     similarity: Literal["cosine", "euclidean"] = "cosine"  # 相似度计算方式
@@ -109,10 +113,10 @@ class VectorDBConfig(BaseModel):
     metadata_fields: List[str] = Field(default_factory=lambda: ["source_file", "chunk_type"])  # 元数据字段，用于过滤
     metadata_filter: Optional[Dict[str, Any]] = None  # 元数据过滤，用于过滤
 
+
 # ==========================================
 # 2. 全局根配置 (BaseSettings: 负责统合模块并读取环境变量)
 # ==========================================
-
 class NeneSettings(BaseSettings):
     """
     RAG 系统的全局配置单例类。
@@ -142,9 +146,10 @@ class NeneSettings(BaseSettings):
         验证逻辑：如果某个模块使用了 cloud-api 作为引擎，最好要有 api_key。
         这里可以放置跨字段的全局校验逻辑。
         """
-        if self.llm.infer_engine == "cloud-api" and not self.llm.api_key:
-            raise Warning("LLM engine is cloud-api, but api_key is not set")
-            # pass # 也可以选择在此处报 Warning 或强制抛出 ValueError
+        modules = [self.llm, self.embed, self.stt, self.tts]
+        for mod in modules:
+            if getattr(mod, "infer_engine", None) == "cloud-api" and not mod.api_key:
+                raise ValueError(f"{mod.__class__.__name__} 启用了 cloud-api，但未设置 api_key")
         return self
     
 # 实例化全局配置对象，供其他文件 import 应用
