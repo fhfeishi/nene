@@ -34,6 +34,13 @@ class LLMConfig(BaseModel):
     base_url: Optional[str] = None
     api_key: Optional[str] = None  
     
+    # llama.cpp  --python   infer:
+    gguf_file: Optional[str] = r"E:\local_models\huggingface\local\qwen3.5-2b-gguf\Qwen_Qwen3.5-2B-Q8_0.gguf"
+    
+    # vllm --python infer:
+    
+    
+    
     # 本地服务对外暴露的端口
     server_host: str = "127.0.0.1"
     server_port: int = 8000

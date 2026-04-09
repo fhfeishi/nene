@@ -1,29 +1,11 @@
 # app/components/llm/llm_api.py
 
 import logging
-from app.components.llm.component import QwenLLM
-# from app.components.llm.component import OtherLLM
-from abc import ABC, abstractmethod 
-from typing import Literal
+from app.components.llm.component import QwenLLM, LlamaCppServerLLMcpu, VllmLLMgpu
  
 
 logger = logging.getLogger(__name__)
 
-
-class LLMInterfaceBase(ABC):
-    def __init__(self, mode: Literal["local", "cloud"] = "local"):
-        self.mode = mode 
-        
-    @abstractmethod
-    def _init_model(self):
-        
-        
-        
-        
-        pass 
-        
-
-    pass 
 
 class LLMInterface:
     """ 
@@ -71,3 +53,10 @@ async def chat_endpoint(request: Request):
     from fastapi.responses import StreamingResponse
     return StreamingResponse(llm.astream_chat(prompt), media_type="text/event-stream")
 """
+
+
+
+
+    
+    
+
