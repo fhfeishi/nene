@@ -28,13 +28,14 @@ from fastapi import FastAPI, WebSocket, WebSocketDisconnect, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
+from contextlib import asynccontextmanager, contextmanager
 
 from config.config import get_rag_config
 from components.rag.component import build_chain, load_retriever, answer_question
 from components.api import VoiceInterface, IicRealtimeSTT, EdgeTTS
 
 # 配置日志
-from app.core.logger import setup_logging
+import logging 
 
 logger = logging.getLogger(__name__)
 logger.info("系统启动成功！配置已生效。")

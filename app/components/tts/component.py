@@ -5,12 +5,16 @@ from app.components.base import BaseTTS
 import re 
 import time 
 import asyncio
-import logging 
 import threading
 from typing import Optional, List, Any, Dict, AsyncGenerator 
 
-
+import logging 
 logger = logging.getLogger(__name__)
+
+
+# 中英文句子结束标点
+SENTENCE_ENDINGS = re.compile(r'(?<=[。！？!?;；])\s*')
+
 
 class EdgeTTS(BaseTTS):
     """
@@ -26,9 +30,6 @@ class EdgeTTS(BaseTTS):
     - Edge-TTS 是微软的云端TTS服务，延迟约200-500ms
     - 通过流式合成 + 预加载，可实现近乎实时的语音输出
     """
-    
-    # 中英文句子结束标点
-    SENTENCE_ENDINGS = re.compile(r'(?<=[。！？!?;；])\s*')
     
     # 可用的中文语音列表（常用）
     CHINESE_VOICES = {
@@ -511,3 +512,26 @@ class CloudTTS(BaseTTS):
         if sentence_buffer.strip():
             audio_data = await self._synthesize_async(sentence_buffer.strip(), target_voice)
             yield audio_data
+
+
+
+
+
+
+
+
+
+
+
+if __name__ == '__main__':
+    
+    tts_engine = "edge-tts"    #   edge-tts  kokoro-tts   qwen_tts
+    
+    # model_id: hexgrad/Kokoro-82M                  # huggingface
+    kokoro_tts_models = r"/mnt/e/local_models/huggingface/cache/hub/models--hexgrad--Kokoro-82M/snapshots/f3ff3571791e39611d31c381e3a41a3af07b4987"  
+    # model_id: Qwen/Qwen3-TTS-12Hz-0.6B-Base       # modelscope
+    qwen_tts_models = r"/mnt/e/local_models/modelscope/models/Qwen/Qwen3-TTS-12Hz-0___6B-Base"  
+    
+    
+    
+    

@@ -57,6 +57,7 @@ async def chat_endpoint(request: Request):
 
 
 
+if __name__ == "__main__":
     
-    
+    gguf_file = r"/mnt/e/local_models/huggingface/local/unsloth/Qwen3.5-0.8B-Q4_1.gguf" 
 

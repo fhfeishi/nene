@@ -31,13 +31,16 @@ class LLMConfig(BaseModel):
     device_ids: List[int] = Field(default_factory=lambda: [0])
     
     # 云端 API / 外部服务配置 (当 infer_engine 为 cloud-api 时使用)
-    base_url: Optional[str] = None
-    api_key: Optional[str] = None  
+    cloud_url: Optional[str] = None
+    cloud_apikey: Optional[str] = None  
     
-    # llama.cpp  --python   infer:
-    gguf_file: Optional[str] = r"E:\local_models\huggingface\local\qwen3.5-2b-gguf\Qwen_Qwen3.5-2B-Q8_0.gguf"
+    # llama.cpp   --build-bin   cpu-infer:
+    llamacpp_bin : Optional[str] = r"/home/baheas/githubrepos/llama.cpp/build/bin/llama-server"
+    llamacpp_gguffile: Optional[str] = r"/mnt/e/local_models/huggingface/local/Qwen3.5-0.8B-Q4_1.gguf"
+    llamacpp_port: Optional[int] = 8080
+    llamacpp_ctx : Optional[int] = 4090   # ctx_size
     
-    # vllm --python infer:
+    # vllm          gpu-infer:
     
     
     
@@ -67,7 +70,7 @@ class STTConfig(BaseModel):
     model_id: str = "SenseVoiceSmall"
     hub_backend: Literal["modelscope", "huggingface"] = "huggingface"
     # normal 代表使用 FunASR 等官方 SDK 直接加载
-    infer_engine: Literal["normal", "cloud-api"] = "normal"
+    infer_engine: Literal["funasr", "cloud-api"] = "funasr"
     
     # device 配置
     device: Literal["cuda", "cpu"] = "cuda"
@@ -83,15 +86,18 @@ class TTSConfig(BaseModel):
     model_id: str = "iic/CosyVoice-300M"
     hub_backend: Literal["modelscope", "huggingface"] = "huggingface"
     # normal 代表使用 qwen_tts 等官方 SDK 直接加载
-    infer_engine: Literal["normal", "cloud-api"] = "normal"
+    infer_engine: Literal["qwen", "edge", "kokoro", "cloud"] = "kokoro"
     
     # device 配置
     device: Literal["cuda", "cpu"] = "cuda"
     device_ids: List[int] = Field(default_factory=lambda: [0])
     
     # for cloud-api
-    base_url: Optional[str] = None
-    api_key: Optional[str] = None
+    cloud_url: Optional[str] = None
+    cloud_apikey: Optional[str] = None
+    
+    # 播放器配置
+    audio_sample_rate: int = 24000
 
 
 class ChunkConfig(BaseModel):

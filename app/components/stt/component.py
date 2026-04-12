@@ -2,14 +2,15 @@
 
 from app.components.base import BaseSTT 
 
+# iic/paraformer
 from funasr import AutoModel
 FUNASR_AVAILABLE = True 
     
 from typing import Callable, Optional, Dict, Any
-import logging 
 import numpy as np 
 import asyncio
 
+import logging 
 logger = logging.getLogger(__name__)
 
 class IicRealtimeSTT(BaseSTT):

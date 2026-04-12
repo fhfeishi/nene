@@ -1,0 +1,33 @@
+syntax = "proto3";
+
+package tts;
+
+// TTS 服务定义
+service TTSService {
+  // 单次合成：发送文本，返回音频流（分块传输大文件）
+  rpc Synthesize (SynthesizeRequest) returns (stream AudioChunk);
+  
+  // 健康检查
+  rpc HealthCheck (HealthRequest) returns (HealthResponse);
+}
+
+message SynthesizeRequest {
+  string text        = 1;  // 要合成的文字
+  string engine      = 2;  // "kokoro" | "edge" | "qwen"
+  int32  sample_rate = 3;  // 期望采样率（0 表示使用服务端默认值）
+}
+
+// 服务端流式返回的音频块
+message AudioChunk {
+  bytes  pcm_data    = 1;  // Float32 小端序 PCM 原始字节
+  int32  sample_rate = 2;  // 实际采样率
+  bool   is_last     = 3;  // 最后一块标志
+}
+
+message HealthRequest {}
+
+message HealthResponse {
+  bool   ok             = 1;
+  string message        = 2;
+  repeated string loaded_engines = 3;  // 已加载的引擎列表
+}

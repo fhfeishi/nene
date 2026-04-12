@@ -1,0 +1,229 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Nene 实时语音交互中心</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        /* 自定义滚动条使其更优雅 */
+        ::-webkit-scrollbar { width: 6px; }
+        ::-webkit-scrollbar-track { background: transparent; }
+        ::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 10px; }
+        .think-text { color: #94a3b8; font-style: italic; font-size: 0.9em; }
+        .typing-indicator::after { content: '▌'; animation: blink 1s step-end infinite; }
+        @keyframes blink { 50% { opacity: 0; } }
+    </style>
+</head>
+<body class="bg-gray-50 h-screen flex flex-col font-sans">
+
+    <header class="bg-white shadow-sm border-b border-gray-200 px-6 py-4 flex justify-between items-center z-10">
+        <div class="flex items-center gap-3">
+            <div class="w-8 h-8 bg-blue-600 rounded-lg flex items-center justify-center text-white font-bold text-xl">N</div>
+            <h1 class="text-xl font-bold text-gray-800">Nene 实时语音大模型</h1>
+        </div>
+        <div class="flex items-center gap-4">
+            <span class="text-sm font-medium text-gray-500">TTS 声音引擎:</span>
+            <select id="ttsSelect" class="bg-gray-100 border border-gray-300 text-gray-700 text-sm rounded-lg focus:ring-blue-500 focus:border-blue-500 block p-2">
+                <option value="kokoro" selected>Kokoro-82M (极速本地)</option>
+                <option value="qwen">Qwen3-TTS (高拟真)</option>
+                <option value="edge">Edge TTS (微软云端)</option>
+            </select>
+            <div id="connectionStatus" class="flex items-center gap-2 text-sm text-gray-500">
+                <div class="w-2.5 h-2.5 rounded-full bg-gray-400" id="statusDot"></div>
+                <span id="statusText">等待连接</span>
+            </div>
+        </div>
+    </header>
+
+    <main id="chatContainer" class="flex-1 overflow-y-auto p-6 flex flex-col gap-6 w-full max-w-4xl mx-auto">
+        <div class="flex gap-4">
+            <div class="w-8 h-8 rounded-full bg-blue-100 flex items-center justify-center text-blue-600 font-bold shrink-0">N</div>
+            <div class="bg-white border border-gray-200 p-4 rounded-2xl rounded-tl-none shadow-sm max-w-[85%] text-gray-800 leading-relaxed">
+                你好！我是 Nene，你的智能语音助手。请在下方输入你想问的问题，我将通过 WebSocket 流式为您解答并实时合成语音。
+            </div>
+        </div>
+    </main>
+
+    <footer class="bg-white border-t border-gray-200 p-4 w-full max-w-4xl mx-auto rounded-t-2xl shadow-[0_-4px_6px_-1px_rgba(0,0,0,0.05)]">
+        <div class="flex gap-3">
+            <input type="text" id="promptInput" 
+                   class="flex-1 bg-gray-100 border-none rounded-xl px-5 py-3 focus:outline-none focus:ring-2 focus:ring-blue-500 transition-all" 
+                   placeholder="输入你的问题，例如：介绍一下武汉大学..." 
+                   onkeypress="handleKeyPress(event)">
+            
+            <button id="sendBtn" onclick="startChat()" 
+                    class="bg-blue-600 hover:bg-blue-700 text-white px-6 py-3 rounded-xl font-medium transition-colors shadow-sm flex items-center gap-2">
+                <span>发送</span>
+                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8"></path></svg>
+            </button>
+            
+            <button id="stopBtn" onclick="stopChat()" disabled
+                    class="bg-red-500 hover:bg-red-600 text-white px-4 py-3 rounded-xl font-medium transition-colors shadow-sm disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2">
+                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 10a1 1 0 011-1h4a1 1 0 011 1v4a1 1 0 01-1 1h-4a1 1 0 01-1-1v-4z"></path></svg>
+            </button>
+        </div>
+    </footer>
+
+    <script>
+        let ws;
+        let audioCtx;
+        let nextPlayTime = 0;
+        let sourceNodes = [];
+        let currentBotBubble = null; // 记录当前正在吐字的气泡
+
+        const UI = {
+            chatContainer: document.getElementById('chatContainer'),
+            statusDot: document.getElementById('statusDot'),
+            statusText: document.getElementById('statusText'),
+            promptInput: document.getElementById('promptInput'),
+            sendBtn: document.getElementById('sendBtn'),
+            stopBtn: document.getElementById('stopBtn'),
+            ttsSelect: document.getElementById('ttsSelect')
+        };
+
+        function setStatus(state, text) {
+            UI.statusText.innerText = text;
+            if (state === 'idle') { UI.statusDot.className = "w-2.5 h-2.5 rounded-full bg-gray-400"; }
+            if (state === 'working') { UI.statusDot.className = "w-2.5 h-2.5 rounded-full bg-green-500 animate-pulse"; }
+            if (state === 'error') { UI.statusDot.className = "w-2.5 h-2.5 rounded-full bg-red-500"; }
+        }
+
+        function scrollToBottom() {
+            UI.chatContainer.scrollTop = UI.chatContainer.scrollHeight;
+        }
+
+        // 添加用户气泡
+        function addUserMessage(text) {
+            const html = `
+                <div class="flex gap-4 flex-row-reverse">
+                    <div class="w-8 h-8 rounded-full bg-gray-800 flex items-center justify-center text-white font-bold shrink-0">U</div>
+                    <div class="bg-blue-600 text-white p-4 rounded-2xl rounded-tr-none shadow-sm max-w-[85%] leading-relaxed">${text}</div>
+                </div>`;
+            UI.chatContainer.insertAdjacentHTML('beforeend', html);
+            scrollToBottom();
+        }
+
+        // 创建空的 AI 气泡并返回内容容器
+        function createBotBubble() {
+            const id = 'bot-' + Date.now();
+            const html = `
+                <div class="flex gap-4">
+                    <div class="w-8 h-8 rounded-full bg-blue-100 flex items-center justify-center text-blue-600 font-bold shrink-0">N</div>
+                    <div class="bg-white border border-gray-200 p-4 rounded-2xl rounded-tl-none shadow-sm max-w-[85%] text-gray-800 leading-relaxed typing-indicator" id="${id}"></div>
+                </div>`;
+            UI.chatContainer.insertAdjacentHTML('beforeend', html);
+            scrollToBottom();
+            return document.getElementById(id);
+        }
+
+        // 音频解码播放核心逻辑
+        function base64ToFloat32Array(base64) {
+            const binaryString = window.atob(base64);
+            const bytes = new Uint8Array(binaryString.length);
+            for (let i = 0; i < binaryString.length; i++) { bytes[i] = binaryString.charCodeAt(i); }
+            return new Float32Array(bytes.buffer);
+        }
+
+        function playAudioChunk(float32Data, sampleRate) {
+            if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)({ sampleRate: sampleRate });
+            const audioBuffer = audioCtx.createBuffer(1, float32Data.length, sampleRate);
+            audioBuffer.copyToChannel(float32Data, 0);
+            const source = audioCtx.createBufferSource();
+            source.buffer = audioBuffer;
+            source.connect(audioCtx.destination);
+            
+            let currentTime = audioCtx.currentTime;
+            if (currentTime < nextPlayTime) {
+                source.start(nextPlayTime);
+                nextPlayTime += audioBuffer.duration;
+            } else {
+                source.start(currentTime);
+                nextPlayTime = currentTime + audioBuffer.duration;
+            }
+            
+            sourceNodes.push(source);
+            source.onended = () => { sourceNodes = sourceNodes.filter(s => s !== source); };
+        }
+
+        function handleKeyPress(e) {
+            if (e.key === 'Enter') startChat();
+        }
+
+        function stopChat() {
+            setStatus('idle', '已强制打断');
+            
+            // 掐死所有正在播放的音频
+            sourceNodes.forEach(source => { try { source.stop(); } catch (e) {} });
+            sourceNodes = [];
+            nextPlayTime = 0;
+            
+            // 通知后端停止
+            if (ws && ws.readyState === WebSocket.OPEN) {
+                ws.send(JSON.stringify({ action: "stop" }));
+            }
+            
+            // 恢复 UI 状态
+            UI.sendBtn.disabled = false;
+            UI.stopBtn.disabled = true;
+            if(currentBotBubble) currentBotBubble.classList.remove('typing-indicator');
+        }
+
+        function startChat() {
+            const prompt = UI.promptInput.value.trim();
+            if (!prompt) return;
+            
+            const ttsType = UI.ttsSelect.value;
+            
+            // 锁定界面
+            UI.promptInput.value = "";
+            UI.sendBtn.disabled = true;
+            UI.stopBtn.disabled = false;
+            
+            // 重置音频上下文
+            nextPlayTime = 0;
+            if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+            if (audioCtx.state === 'suspended') audioCtx.resume();
+
+            addUserMessage(prompt);
+            currentBotBubble = createBotBubble();
+            setStatus('working', '思考与生成中...');
+
+            ws = new WebSocket("ws://127.0.0.1:8000/ws/chat");
+
+            ws.onopen = () => {
+                ws.send(JSON.stringify({ prompt: prompt, tts_type: ttsType }));
+            };
+
+            ws.onmessage = (event) => {
+                const msg = JSON.parse(event.data);
+                
+                if (msg.type === "text") {
+                    // 处理可能存在的 <think> 标签样式（如果你后端没完全过滤掉的话）
+                    let text = msg.content.replace(/<think>/g, '<span class="think-text">【思考中...】<br>').replace(/<\/think>/g, '</span><br>');
+                    currentBotBubble.innerHTML += text;
+                    scrollToBottom();
+                } 
+                else if (msg.type === "audio") {
+                    playAudioChunk(base64ToFloat32Array(msg.data), msg.sample_rate);
+                }
+                else if (msg.type === "done") {
+                    setStatus('idle', '生成完毕');
+                    currentBotBubble.classList.remove('typing-indicator');
+                    UI.sendBtn.disabled = false;
+                    UI.stopBtn.disabled = true;
+                    ws.close();
+                }
+            };
+
+            ws.onerror = () => {
+                setStatus('error', '连接服务器失败');
+                currentBotBubble.innerHTML += "<br><span class='text-red-500'>[网络连接异常，请检查后端服务]</span>";
+                currentBotBubble.classList.remove('typing-indicator');
+                UI.sendBtn.disabled = false;
+                UI.stopBtn.disabled = true;
+            };
+        }
+    </script>
+</body>
+</html>

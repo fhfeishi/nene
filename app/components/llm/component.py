@@ -130,10 +130,8 @@ class LlamaCppServerLLMcpu:
     基于 llama-server.exe 的本地独立进程 LLM 类
     通过子进程启动模型，并通过兼容 OpenAI 的本地 API 进行交互
     """                
-    def __init__(self, gguf_file: str, port: int=8080, ctx_size:int=4096):
-        self.gguf_file = gguf_file 
-        self.port = port 
-        self.ctx_size = ctx_size 
+    def __init__(self, settings=settings):
+        self.cfg = settings 
         self.server_process = None 
         self.client = None 
         
@@ -144,92 +142,96 @@ class LlamaCppServerLLMcpu:
         self._init_client()
         
         
-        def _start_server(self):
-            """ 在后台运行 llama-server """
-            command = [
-                "llama-server.exe", # 如果在 Linux/Mac 下，改为 "./llama-server"
-                "-m", self.gguf_file,
-                "-c", str(self.ctx_size),
-                "--port", str(self.port)
-            ]
-            
-            logger.info(f"Starting local llama-server on port {self.port}...")
+    def _start_server(self):
+        """ 在后台运行 llama-server """
+        command = [
+            self.cfg.llamacpp_bin, 
+            "-m", self.cfg.llamacpp_gguffile,
+            "-c", self.cfg.llamacpp_ctx,
+            "--port", str(self.cfg.llamacpp_port)
+        ]
         
-            # 启动子进程，将输出重定向以避免污染主程序的控制台日志
-            # 如果需要调试模型加载过程，可以去掉 stdout 和 stderr 参数
-            self.server_process = subprocess.Popen(
-                command, 
-                stdout=subprocess.DEVNULL, 
-                stderr=subprocess.DEVNULL
-            )
+        logger.info(f"Starting local llama-server on port {self.cfg.llamacpp_port}...")
+        
+        # 启动子进程，将输出重定向以避免污染主程序的控制台日志
+        # 如果需要调试模型加载过程，可以去掉 stdout 和 stderr 参数
+        self.server_process = subprocess.Popen(
+            command, 
+            stdout=subprocess.DEVNULL, 
+            stderr=subprocess.DEVNULL
+        )
+        # 控制台会输出 llamacpp 日志
+        # self.server_process = subprocess.Popen(
+        #     command, 
+        # )
             
-            # 注册清理函数，防止主进程意外退出时留下僵尸进程
-            atexit.register(self._cleanup_process)
-            
-            # 等待服务器就绪
-            self._wait_for_health()
+        # 注册清理函数，防止主进程意外退出时留下僵尸进程
+        atexit.register(self._cleanup_process)
+        
+        # 等待服务器就绪
+        self._wait_for_health()
 
-        def _wait_for_health(self, timeout: int = 120):
-            """ 阻塞等待服务器加载模型完毕 """
-            health_url = f"http://localhost:{self.port}/health"
-            start_time = time.time()
-            
-            logger.info("Waiting for model to load into memory...")
-            while time.time() - start_time < timeout:
-                try:
-                    # 尝试访问健康检查接口
-                    urllib.request.urlopen(health_url)
-                    logger.info("Model loaded successfully. Server is ready!")
-                    return
-                except (urllib.error.URLError, ConnectionResetError):
-                    time.sleep(2)  # 每 2 秒探测一次
-                    
-            # 如果超时仍未启动
-            self._cleanup_process()
-            raise TimeoutError(f"llama-server failed to start within {timeout} seconds.")
-
-        def _init_client(self):
-            """ 初始化 AsyncOpenAI 客户端，指向本地端口 """
-            self.client = AsyncOpenAI(
-                base_url=f"http://localhost:{self.port}/v1",
-                api_key="sk-local-llama-cpp" # 本地服务不需要真实 API Key
-            )
-
-        def _cleanup_process(self):
-            """ 安全关闭子进程 """
-            if self.server_process and self.server_process.poll() is None:
-                logger.info("Terminating local llama-server process...")
-                self.server_process.terminate()
-                self.server_process.wait()
-                logger.info("llama-server terminated.")
-
-        def __del__(self):
-            """ 对象被销毁时，确保清理进程 """
-            self._cleanup_process()
-
-        async def astream_chat(self, prompt: str) -> AsyncGenerator[str, None]:
-            """ 
-            核心异步流式接口：接收 prompt，返回异步生成器。
-            复用 OpenAI 的标准调用逻辑。
-            """
-            if not self.client:
-                raise RuntimeError("Client is not initialized.")
-                
+    def _wait_for_health(self, timeout: int = 120):
+        """ 阻塞等待服务器加载模型完毕 """
+        health_url = f"http://localhost:{self.cfg.llamacpp_port}/health"
+        start_time = time.time()
+        
+        logger.info("Waiting for model to load into memory...")
+        while time.time() - start_time < timeout:
             try:
-                response = await self.client.chat.completions.create(
-                    model="local-model", # 这里填什么都可以，llama-server 会忽略
-                    messages=[{"role": "user", "content": prompt}],
-                    stream=True,
-                    temperature=0.7
-                )
+                # 尝试访问健康检查接口
+                urllib.request.urlopen(health_url)
+                logger.info("Model loaded successfully. Server is ready!")
+                return
+            except (urllib.error.URLError, ConnectionResetError):
+                time.sleep(2)  # 每 2 秒探测一次
                 
-                async for chunk in response:
-                    if chunk.choices and chunk.choices[0].delta.content:
-                        yield chunk.choices[0].delta.content
-                        
-            except Exception as e:
-                logger.error(f"Error during streaming chat: {e}")
-                yield f"\n[Error: {str(e)}]"
+        # 如果超时仍未启动
+        self._cleanup_process()
+        raise TimeoutError(f"llama-server failed to start within {timeout} seconds.")
+
+    def _init_client(self):
+        """ 初始化 AsyncOpenAI 客户端，指向本地端口 """
+        self.client = AsyncOpenAI(
+            base_url=f"http://localhost:{self.cfg.llamacpp_port}/v1",
+            api_key="sk-local" 
+        )
+
+    def _cleanup_process(self):
+        """ 安全关闭子进程 """
+        if self.server_process and self.server_process.poll() is None:
+            logger.info("Terminating local llama-server process...")
+            self.server_process.terminate()
+            self.server_process.wait()
+            logger.info("llama-server terminated.")
+
+    def __del__(self):
+        """ 对象被销毁时，确保清理进程 """
+        self._cleanup_process()
+
+    async def astream_chat(self, prompt: str) -> AsyncGenerator[str, None]:
+        """ 
+        核心异步流式接口：接收 prompt，返回异步生成器。
+        复用 OpenAI 的标准调用逻辑。
+        """
+        if not self.client:
+            raise RuntimeError("Client is not initialized.")
+            
+        try:
+            response = await self.client.chat.completions.create(
+                model="local-model", # 这里填什么都可以，llama-server 会忽略
+                messages=[{"role": "user", "content": prompt}],
+                stream=True,
+                temperature=0.7
+            )
+            
+            async for chunk in response:
+                if chunk.choices and chunk.choices[0].delta.content:
+                    yield chunk.choices[0].delta.content
+                    
+        except Exception as e:
+            logger.error(f"Error during streaming chat: {e}")
+            yield f"\n[Error: {str(e)}]"
             
         
 # vllm [gpu] 集成
@@ -342,3 +344,13 @@ class VllmLLMgpu:
             yield f"\n[Generation Error: {str(e)}]"
 
 
+
+if __name__ == "__main__":
+    
+    gguf_file = r"/mnt/e/local_models/huggingface/local/unsloth/Qwen3.5-0.8B-Q4_1.gguf" 
+    # 本机wsl-cpu编译
+    llamacpp_engine = r"\\wsl.localhost\Ubuntu-22.04\home\baheas\githubrepos\llama.cpp\build\bin\llama-server" 
+    
+    
+    
+    

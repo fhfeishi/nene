@@ -70,9 +70,14 @@ class BaseComponent(ABC, Generic[_ConfigT]):
             f"{self.__class__.__module__}.{self.__class__.__name__}"
         )
 
+    @property
+    def ready(self) -> bool:
+        """只读属性：组件是否已就绪"""
+        return self._is_ready
+    
     # ── 生命周期 ────────────────────────────────
     @abstractmethod
-    async def setup(self) -> None:
+    async def startup(self) -> None:
         """
         异步初始化：加载模型权重、建立连接。
         由 FastAPI lifespan 在服务启动时调用。
@@ -97,11 +102,57 @@ class BaseComponent(ABC, Generic[_ConfigT]):
         return {
             "component": self.__class__.__name__,
             "ready": self._ready,
-            "model_id": getattr(self.config, "model_id", "unknown"),
             "device": getattr(self.config, "device", "unknown"),
-            "infer_engine": getattr(self.config, "infer_engine", "unknown"),
         }
 
+
+# ─────────────────────────────────────────────
+# AI 组件基类 (LLM, Embed, TTS, STT)
+# ─────────────────────────
+
+# base class: llm
+class BaseLLM(BaseComponent[LLMConfig]):
+    """
+    大语言模型推理基类，泛型已绑定 LLMConfig。
+    """
+
+    @abstractmethod
+    async def chat(
+        self,
+        messages: List[Dict[str, str]],
+        **kwargs: Any,
+    ) -> str:
+        """
+        一次性返回完整回复。
+        messages 遵循 OpenAI 格式：[{"role": "user", "content": "..."}]
+        """
+        ...
+
+    @abstractmethod
+    async def chat_stream(
+        self,
+        messages: List[Dict[str, str]],
+        **kwargs: Any,
+    ) -> AsyncGenerator[str, None]:
+        """流式返回，每次 yield 一个 token 或文本片段。"""
+        ...
+
+
+# base class:  embeding 
+class BaseEmbed(BaseComponent[EmbedConfig]):
+    """文本向量化基类，泛型已绑定 EmbedConfig。"""
+
+    @abstractmethod
+    async def embed(self, texts: List[str]) -> List[List[float]]:
+        """
+        批量向量化，返回与输入等长的向量列表。
+        实现时应支持 normalize_embeddings，便于余弦相似度计算。
+        """
+        ...
+
+    async def embed_one(self, text: str) -> List[float]:
+        """单条便捷方法，默认复用 embed()，子类可按需重写提升效率。"""
+        return (await self.embed([text]))[0]
 
 
 
@@ -133,48 +184,6 @@ class BaseSTT(BaseComponent[STTConfig]):
         """
         ...
 
-# class BaseSTT(ABC):
-#     """
-#     语音转文本 STT 基类
-#     设计原则：全异步接口，防止阻塞主事件循环。
-#     """
-    
-#     @abstractmethod
-#     async def transcribe(self, audio_data: bytes) -> str:
-#         """
-#         一次性识别整段音频（适用于普通多轮对话的录音上传）。
-#         """
-#         pass
-
-#     @abstractmethod
-#     async def start_streaming(self) -> None:
-#         """
-#         初始化并启动流式识别上下文。
-#         """
-#         pass
-
-#     @abstractmethod
-#     async def send_audio_frame(self, audio_frame: bytes) -> tuple[str, bool]:
-#         """
-#         发送流式音频帧并获取即时结果（适用于语音通话模式）。
-#         :return: (text, is_final) 返回当前识别的文本，以及是否是最终结果。
-#         """
-#         pass
-
-#     @abstractmethod
-#     async def force_break_sentence(self) -> str:
-#         """
-#         VAD 静默触发：强制断句并返回该句最终文本，清空上下文准备下一句。
-#         """
-#         pass
-
-#     @abstractmethod
-#     async def stop_streaming(self) -> str:
-#         """
-#         结束流式识别，处理残留缓冲区音频，返回最终文本并销毁上下文。
-#         """
-#         pass
-
 
 
 # base class: tts
@@ -198,60 +207,7 @@ class BaseTTS(BaseComponent[TTSConfig]):
         ...
 
 
-# base class: llm
-class BaseLLM(BaseComponent[LLMConfig]):
-    """
-    大语言模型推理基类，泛型已绑定 LLMConfig。
-    本地 transformers / llama-cpp / 云端 API 均实现此接口。
-    """
 
-    @abstractmethod
-    async def chat(
-        self,
-        messages: List[Dict[str, str]],
-        **kwargs: Any,
-    ) -> str:
-        """
-        一次性返回完整回复。
-        messages 遵循 OpenAI 格式：[{"role": "user", "content": "..."}]
-        """
-        ...
-
-    @abstractmethod
-    async def chat_stream(
-        self,
-        messages: List[Dict[str, str]],
-        **kwargs: Any,
-    ) -> AsyncGenerator[str, None]:
-        """流式返回，每次 yield 一个 token 或文本片段。"""
-        ...
-
-    async def embed_query(self, text: str) -> List[float]:
-        """
-        部分 LLM 兼具 embedding 能力（如 Qwen）。
-        默认抛出 NotImplementedError，调用方捕获后回退到 BaseEmbed。
-        """
-        raise NotImplementedError(
-            f"{self.__class__.__name__} does not support embed_query. "
-            "Use a dedicated BaseEmbed instead."
-        )
-
-
-# base class:  embeding 
-class BaseEmbed(BaseComponent[EmbedConfig]):
-    """文本向量化基类，泛型已绑定 EmbedConfig。"""
-
-    @abstractmethod
-    async def embed(self, texts: List[str]) -> List[List[float]]:
-        """
-        批量向量化，返回与输入等长的向量列表。
-        实现时应支持 normalize_embeddings，便于余弦相似度计算。
-        """
-        ...
-
-    async def embed_one(self, text: str) -> List[float]:
-        """单条便捷方法，默认复用 embed()，子类可按需重写提升效率。"""
-        return (await self.embed([text]))[0]
 
 # base class : vector store
 class BaseVectorStore(BaseComponent[VectorDBConfig]):
@@ -290,7 +246,6 @@ class BaseVectorStore(BaseComponent[VectorDBConfig]):
         ...
 
 
- # base class: RAG system
 
 
 # base class: retriever 
@@ -315,6 +270,11 @@ class BaseRetriever(BaseComponent[VectorDBConfig]):
         """
         ...
 
+
+
+# ─────────────────────────────────────────────
+# RAG 编排器基类
+# ─────────────────────────────────────────────
 # base class: RAG sys
 class BaseRAG(ABC):
     """

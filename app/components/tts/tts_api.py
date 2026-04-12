@@ -62,3 +62,11 @@ async def rag_pipeline_demo():
         # await websocket.send_bytes(audio_chunk)
         print(f"发送音频片段: {len(audio_chunk)} bytes")
 """
+
+
+
+
+if __name__ == '__main__':
+    
+    tts_engine = "edge-tts"    #   edge-tts  kokoro-tts   qwen_tts
+    
