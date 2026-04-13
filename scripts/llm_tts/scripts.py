@@ -90,14 +90,21 @@ class TextChunker:
 # 3. 本地 LLM 引擎 (llama.cpp)
 # ==========================================
 class LlamaCppServerLLMcpu:
-    """基于 llama-server 的本地 LLM 独立进程"""
+    """基于 llama-server 的本地 LLM 独立进程 (全异步生命周期)"""
     def __init__(self):
         self.server_process = None
         self.client = None
-        self._start_server()
-        self._init_client()
+        self._is_ready = False
 
-    def _start_server(self):
+    async def startup(self):
+        """异步启动服务并等待就绪"""
+        self._start_server_process()
+        # 异步等待服务健康，绝不阻塞主线程
+        await self._wait_for_health_async()
+        self._init_client()
+        self._is_ready = True
+        
+    def _start_server_process(self):
         command = [
             settings.llamacpp_bin,
             "-m", settings.gguf_file,
@@ -116,24 +123,35 @@ class LlamaCppServerLLMcpu:
         # self.server_process = subprocess.Popen(command)
         
         # 注册退出回调，防止 Python 崩溃时留下僵尸 C++ 进程
-        atexit.register(self._cleanup_process)
-        # 阻塞等待模型加载进内存
-        self._wait_for_health()
+        atexit.register(self._sync_cleanup)
+        
 
-    def _wait_for_health(self, timeout: int = 120):
-        """健康检查轮询，等待 llama.cpp 的 HTTP 服务就绪"""
+    async def _wait_for_health_async(self, timeout: int = 120):
+        """异步健康检查轮询，等待 llama.cpp 的 HTTP 服务就绪"""
         health_url = f"http://localhost:{settings.llm_port}/health"
         start_time = time.time()
-        while time.time() - start_time < timeout:
+        
+        # 将 urllib 的同步请求包装为函数，以便投入线程池
+        def _ping():
             try:
                 urllib.request.urlopen(health_url)
-                logger.info(f"LLM {settings.gguf_file.rsplit(os.sep, 1)[1]} Server is ready!")
-                return
+                return True
             except (urllib.error.URLError, ConnectionResetError):
-                time.sleep(1)# 没准备好就等 1 秒再问
-        self._cleanup_process()
-        raise TimeoutError("llama-server failed to start.")
+                return False
+        
+        
+        while time.time() - start_time < timeout:
+            # 使用 to_thread 发起 HTTP 请求，防止阻塞
+            is_healthy = await asyncio.to_thread(_ping)
+            if is_healthy:
+                logger.info(f"✅ LLM {settings.gguf_file.rsplit(os.sep, 1)[1]} Server is ready!")
+                return
+            # 使用 asyncio.sleep 代替 time.sleep，把 CPU 时间片让给其他任务
+            await asyncio.sleep(1)
 
+        await self.teardown()        
+        raise TimeoutError("llama-server failed to start within the timeout period.")
+    
     def _init_client(self):
         """初始化官方的 AsyncOpenAI 客户端，将其指向我们的本地端口"""
         self.client = AsyncOpenAI(
@@ -141,11 +159,19 @@ class LlamaCppServerLLMcpu:
             api_key="sk-local"
         )
 
-    def _cleanup_process(self):
+    async def teardown(self) -> None:
+        """关闭服务，由 FastAPI lifespan 调用"""
+        logger.info("🛑 正在关闭 LLM 引擎与 llama.cpp 子进程...")
+        self._sync_cleanup()
+        self._is_ready = False
+
+    def _sync_cleanup(self):
+        """实际的清理逻辑（同步，供 teardown 和 atexit 复用）"""
         if self.server_process and self.server_process.poll() is None:
             logger.info("Terminating llama-server...")
             self.server_process.terminate()
             self.server_process.wait()
+            self.server_process = None
 
     async def astream_chat(self, prompt: str) -> AsyncGenerator[str, None]:
         """核心业务接口：接收用户输入，返回异步的文字流"""
@@ -176,7 +202,7 @@ class BaseTTS:
         pass
     
     @property
-    def _is_ready(self) -> bool:
+    def is_ready(self) -> bool:
         """ states """
         return self._is_ready 
 
@@ -225,7 +251,6 @@ class KokoroTTS(BaseTTS):
 
 class EdgeTTS(BaseTTS):
     def __init__(self):
-        logger.info("Initializing EdgeTTS...")
         self.voice = "zh-CN-XiaoxiaoNeural"
     
     async def startup(self) -> None:
@@ -327,15 +352,18 @@ async def lifespan(app: FastAPI):
     logger.info("🚀 正在启动系统资源...")
     
     # 初始化 LLM 引擎 (会拉起 llama-server)
-    app.state.llm_engine = LlamaCppServerLLMcpu()  # app.state.llm_engine
+    llm_engine = LlamaCppServerLLMcpu()  # app.state.llm_engine
+    await llm_engine.startup()
+    app.state.llm_engine = llm_engine
     
     # 瞬间创建空壳实例，拿到它的引用
     edge_engine = EdgeTTS()
     # 异步执行耗时的加载操作
     await edge_engine.startup()     # startup() 的返回值 如果是自身的话，一行代码搞定。
     # 将装载完毕的实例挂载到全局状态上
-    app.state.tts_engine = edge_engine
-    # # app.state.tts_engine = await EdgeTTS().startup()
+    tts_engines['edge'] = edge_engine
+    app.state.tts_engines = tts_engines   # 字典整个挂载到 app.state 
+    # # app.state.tts_engines = await EdgeTTS().startup()
     
     logger.info("✅ 所有核心服务已就绪！")
     
@@ -348,11 +376,14 @@ async def lifespan(app: FastAPI):
     logger.info("🛑 正在关闭 Nene 系统，清理资源...")
     
     # 终止 llama.cpp 子进程，防止变成僵尸进程占用 VRAM/RAM
-    if app.state.llm_engine:
-        app.state.llm_engine._cleanup_process()
-    if app.state.tts_engine:
-        await engine.teardown()
-    app.state.engine.clear()     # clear 方法来自于 字典 类
+    if hasattr(app.state, "llm_engine") and app.state.llm_engine:
+        await app.state.llm_engine.teardown()
+    # 遍历字典，优雅关闭所有后台拉起的引擎
+    if hasattr(app.state, "tts_engines"):
+        for name, engine in app.state.tts_engines.items():
+            logger.info(f"正在清理 TTS 引擎: {name}")
+            await engine.teardown()
+        app.state.tts_engines.clear() # 斩断引用，协助 GC 回收显存
         
     logger.info("👋 资源清理完毕，安全退出。")
 
@@ -381,22 +412,23 @@ async def background_tts_worker(websocket: WebSocket,
     作用：从队列拿 Token -> 切分成句 -> 交给 TTS 推理 -> 转 Base64 -> 推给前端
     """
     chunker = TextChunker()
-    engine = tts_engines.get(tts_type)
+    engine = websocket.app.state.tts_engines.get(tts_type)
     
     # 动态实时加载未被预热的 TTS 引擎
-    # if not engine:
-    #     logger.warning(f"TTS 引擎 {tts_type} 未初始化，尝试实时加载...")
-    #     if tts_type == "edge": engine = EdgeTTS()
-    #     elif tts_type == "qwen": engine = QwenTTS()
-    #     else: engine = KokoroTTS()
-    #     tts_engines[tts_type] = engine
-    #     logger.info(f"✅ TTS 引擎 {tts_type} 实时加载完毕！") 
-    """ 
-    这是一个巨大的隐患！ QwenTTS() 和 KokoroTTS() 的 __init__ 是同步函数，
-    它们会把几个 GB 的权重加载到显存。如果在 WebSocket 的异步上下文中直接执行同步加载，
-    会导致整个 FastAPI 服务假死（Event Loop Blocked），
-    在此期间其他所有用户的请求都会卡住（长达 3-10 秒）。
-    """
+    if not engine:
+        logger.warning(f"TTS 引擎 {tts_type} 未初始化，尝试实时加载...")
+        if tts_type == "edge": engine = EdgeTTS()
+        elif tts_type == "qwen": engine = QwenTTS()
+        else: engine = KokoroTTS()
+        tts_engines[tts_type] = engine
+        
+        # 不要忘了调用 startup 来加载模型！
+        await engine.startup()
+        
+        # 加载完后，塞回全局字典，下次别人请求就不用再加载了
+        websocket.app.state.tts_engines[tts_type] = engine
+        logger.info(f"✅ TTS 引擎 {tts_type} 异步加载完毕！")
+
         
     try:
         # 循环从队列切分出完整句子
@@ -407,7 +439,7 @@ async def background_tts_worker(websocket: WebSocket,
             t0 = time.time()
             
             # 1. 声音推理
-            audio_data = await engine.synthesize(sentence)
+            audio_data = await engine.synthesize(sentence)  
             
             if audio_data is not None and not cancel_event.is_set():
                 # 针对 torch.Tensor
@@ -485,7 +517,7 @@ async def websocket_chat(websocket: WebSocket):
         )
             
         # 3. 主任务：驱动大模型生成 (生产者)
-        async for chunk in llm_engine.astream_chat(prompt):
+        async for chunk in websocket.app.state.llm_engine.astream_chat(prompt):
             # 检查打断信号，如果被踩刹车，立刻中止 LLM 推理！
             if cancel_event.is_set():
                 logger.info("🛑 收到打断信号，中止大模型生成！")
