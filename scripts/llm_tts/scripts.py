@@ -16,6 +16,7 @@ import atexit
 import urllib.request
 import urllib.error
 import base64  
+import gc  # 新增：用于垃圾回收
 from typing import AsyncGenerator, Optional, Dict, Any, List
 
 import torch
@@ -32,21 +33,28 @@ from contextlib import asynccontextmanager
 # ==========================================
 # 1. 配置管理 (Pydantic-Settings)
 # ==========================================
+
+import os
+# 强行把镜像站塞进环境变量，天王老子来了也得走国内镜像
+os.environ["HF_ENDPOINT"] = "https://hf-mirror.com"
+# 强制 Hugging Face 进入离线模式
+os.environ["HF_HUB_OFFLINE"] = "1"
+import warnings
+warnings.filterwarnings("ignore")
+
+
 class AppSettings(BaseSettings):
     # LLM 配置
     gguf_file: str = "/mnt/e/local_models/huggingface/local/Qwen3.5-4B-Q4_1.gguf"  # 0.8B, 4B
     llamacpp_bin: str = "/home/baheas/githubrepos/llama.cpp/build/bin/llama-server"
+    koko_model: str = "/mnt/e/local_models/huggingface/cache/hub/models--hexgrad--Kokoro-82M/snapshots/f3ff3571791e39611d31c381e3a41a3af07b4987"
+    qwen_model: str = "/mnt/e/local_models/modelscope/models/Qwen/Qwen3-TTS-12Hz-0___6B-Base"
+    
     llm_port: int = 8080
     ctx_size: int = 4096
     
     # 播放器配置
     audio_sample_rate: int = 24000
-    
-    koko_model: str = r"/mnt/e/local_models/huggingface/cache/hub/models--hexgrad--Kokoro-82M/snapshots/f3ff3571791e39611d31c381e3a41a3af07b4987"
-    qwenTTS_model: str = r"/mnt/e/local_models/modelscope/models/Qwen/Qwen3-TTS-12Hz-0___6B-Base"
-    
-    # class Config:
-    #     env_prefix = "NENE_"
     
     # Pydantic V2 的标准写法，消灭警告
     model_config = SettingsConfigDict(env_prefix="NENE_")
@@ -156,19 +164,43 @@ class LlamaCppServerLLMcpu:
 # 4. TTS 引擎工厂
 # ==========================================
 class BaseTTS:
+    async def startup(self) -> None:
+        """异步初始化：加载模型、预热、建立连接等"""
+        pass
+    
     async def synthesize(self, text: str) -> Optional[np.ndarray]:
         raise NotImplementedError
+    
+    async def teardown(self) -> None:
+        """子类需实现此方法以清理资源和显存"""
+        pass
+    
+    @property
+    def _is_ready(self) -> bool:
+        """ states """
+        return self._is_ready 
 
 class KokoroTTS(BaseTTS):
     def __init__(self):
-        logger.info("Initializing KokoroTTS...")
-        from kokoro import KPipeline
-        import warnings
-        warnings.filterwarnings("ignore")
-        self.pipeline = KPipeline(lang_code='z', repo_id='hexgrad/Kokoro-82M')
+        super().__init__()
+        self.pipeline = None 
         self.voice = "zf_xiaoxiao"
-        # 预热
-        list(self.pipeline("测试", voice=self.voice, speed=1.0))
+        
+    async def startup(self) -> None:
+        logger.info("Initializing KokoroTTS in background...")
+        
+        # 将耗时的同步加载过程封装到函数中
+        def _load_model():
+            from kokoro import KPipeline
+            # self.pipeline = KPipeline(lang_code='z', repo_id='hexgrad/Kokoro-82M')
+            self.pipeline = KPipeline(lang_code='z', repo_id=settings.koko_model, device="cuda")
+            # 预热
+            list(self.pipeline("测试", voice=self.voice, speed=1.0))
+
+        # 线程池加载
+        await asyncio.to_thread(_load_model)
+        self._is_ready = True 
+        logger.info("✅ KokoroTTS is ready!")
 
     async def synthesize(self, text: str) -> Optional[np.ndarray]:
         """
@@ -182,17 +214,30 @@ class KokoroTTS(BaseTTS):
             return None
         return await asyncio.to_thread(sync_infer)
 
+    async def teardown(self) -> None:
+        logger.info("Unloading KokoroTTS and releasing VRAM...")
+        if hasattr(self, 'pipeline'):
+            del self.pipeline
+        gc.collect()
+        if torch.cuda.is_available():
+            torch.cuda.empty_cache()
+
+
 class EdgeTTS(BaseTTS):
     def __init__(self):
         logger.info("Initializing EdgeTTS...")
         self.voice = "zh-CN-XiaoxiaoNeural"
-        
+    
+    async def startup(self) -> None:
+        logger.info("Initializing EdgeTTS...")
+        self._is_ready = True
+        logger.info("✅ EdgeTTS is ready!")
+    
     async def synthesize(self, text: str) -> Optional[np.ndarray]:
         import edge_tts
         from pydub import AudioSegment
-        # PROXY_URL = os.environ.get("https_proxy") or "http://127.0.0.1:7890"
-        # communicate = edge_tts.Communicate(text, voice=self.voice, proxy=PROXY_URL)
         communicate = edge_tts.Communicate(text, voice=self.voice, proxy="http://127.0.0.1:7890")
+        # communicate = edge_tts.Communicate(text, voice=self.voice)
         audio_bytes = b""
         async for chunk in communicate.stream():
             if chunk["type"] == "audio":
@@ -212,22 +257,42 @@ class EdgeTTS(BaseTTS):
             
         return await asyncio.to_thread(decode_audio)
 
+    async def teardown(self) -> None:
+        logger.info("Closing EdgeTTS resources...")
+        # 在线接口无需清理显存，只需占位即可
+        pass
+
+
 class QwenTTS(BaseTTS):
     def __init__(self):
+        super().__init__() # 继承基类的 _is_ready 状态
+        self.model = None 
+        
+    async def startup(self) -> BaseTTS:
         logger.info("Initializing Qwen3-TTS...")
-        from qwen_tts import Qwen3TTSModel
-        import torchaudio
-        import soundfile as sf
         
-        # 应用魔法补丁防止 torchaudio 在 Ubuntu 环境下偶尔的 ffmpeg 冲突
-        torchaudio.load = lambda f, *a, **kw: (torch.from_numpy(sf.read(f)[0]).float().unsqueeze(0), sf.read(f)[1])
+        def _load_model():
+            import torchaudio
+            from qwen_tts import Qwen3TTSModel
+            import soundfile as sf
+            
+            # 应用魔法补丁防止 torchaudio 在 Ubuntu 环境下偶尔的 ffmpeg 冲突
+            torchaudio.load = lambda f, *a, **kw: (torch.from_numpy(sf.read(f)[0]).float().unsqueeze(0), sf.read(f)[1])
+            
+            self.model = Qwen3TTSModel.from_pretrained(
+                # "Qwen/Qwen3-TTS-12Hz-1.7B-CustomVoice",
+                settings.qwen_model,
+                device_map="cuda:0",
+                dtype=torch.float16
+            )
+            torch.set_num_threads(8)
         
-        self.model = Qwen3TTSModel.from_pretrained(
-            "Qwen/Qwen3-TTS-12Hz-1.7B-CustomVoice",
-            device_map="cpu",
-            dtype=torch.float32
-        )
-        torch.set_num_threads(8)
+        # 将耗时的模型加载丢给后台线程
+        await asyncio.to_thread(_load_model)
+        self._is_ready = True 
+        logger.info("✅ Qwen3-TTS is ready!")
+
+        return self 
 
     async def synthesize(self, text: str) -> Optional[np.ndarray]:
         def sync_infer():
@@ -237,6 +302,13 @@ class QwenTTS(BaseTTS):
             return wavs[0]
         return await asyncio.to_thread(sync_infer)
 
+    async def teardown(self) -> None:
+        logger.info("Unloading Qwen3-TTS and releasing VRAM...")
+        if hasattr(self, 'model'):
+            del self.model
+        gc.collect()
+        if torch.cuda.is_available():
+            torch.cuda.empty_cache()
 
 # ==========================================
 # 5. 全局单例声明
@@ -252,14 +324,18 @@ async def lifespan(app: FastAPI):
     # -------------------
     # 1. Startup (启动阶段)
     # -------------------
-    global llm_engine
-    logger.info("🚀 正在启动 Nene 系统资源...")
+    logger.info("🚀 正在启动系统资源...")
     
     # 初始化 LLM 引擎 (会拉起 llama-server)
-    llm_engine = LlamaCppServerLLMcpu()  # app.statu.llm_engine
+    app.state.llm_engine = LlamaCppServerLLMcpu()  # app.state.llm_engine
     
-    # 预加载默认的 TTS 引擎 (Kokoro)
-    tts_engines["kokoro"] = KokoroTTS()
+    # 瞬间创建空壳实例，拿到它的引用
+    edge_engine = EdgeTTS()
+    # 异步执行耗时的加载操作
+    await edge_engine.startup()     # startup() 的返回值 如果是自身的话，一行代码搞定。
+    # 将装载完毕的实例挂载到全局状态上
+    app.state.tts_engine = edge_engine
+    # # app.state.tts_engine = await EdgeTTS().startup()
     
     logger.info("✅ 所有核心服务已就绪！")
     
@@ -272,8 +348,11 @@ async def lifespan(app: FastAPI):
     logger.info("🛑 正在关闭 Nene 系统，清理资源...")
     
     # 终止 llama.cpp 子进程，防止变成僵尸进程占用 VRAM/RAM
-    if llm_engine:
-        llm_engine._cleanup_process()
+    if app.state.llm_engine:
+        app.state.llm_engine._cleanup_process()
+    if app.state.tts_engine:
+        await engine.teardown()
+    app.state.engine.clear()     # clear 方法来自于 字典 类
         
     logger.info("👋 资源清理完毕，安全退出。")
 
@@ -305,13 +384,19 @@ async def background_tts_worker(websocket: WebSocket,
     engine = tts_engines.get(tts_type)
     
     # 动态实时加载未被预热的 TTS 引擎
-    if not engine:
-        logger.warning(f"TTS 引擎 {tts_type} 未初始化，尝试实时加载...")
-        if tts_type == "edge": engine = EdgeTTS()
-        elif tts_type == "qwen": engine = QwenTTS()
-        else: engine = KokoroTTS()
-        tts_engines[tts_type] = engine
-        logger.info(f"✅ TTS 引擎 {tts_type} 实时加载完毕！") 
+    # if not engine:
+    #     logger.warning(f"TTS 引擎 {tts_type} 未初始化，尝试实时加载...")
+    #     if tts_type == "edge": engine = EdgeTTS()
+    #     elif tts_type == "qwen": engine = QwenTTS()
+    #     else: engine = KokoroTTS()
+    #     tts_engines[tts_type] = engine
+    #     logger.info(f"✅ TTS 引擎 {tts_type} 实时加载完毕！") 
+    """ 
+    这是一个巨大的隐患！ QwenTTS() 和 KokoroTTS() 的 __init__ 是同步函数，
+    它们会把几个 GB 的权重加载到显存。如果在 WebSocket 的异步上下文中直接执行同步加载，
+    会导致整个 FastAPI 服务假死（Event Loop Blocked），
+    在此期间其他所有用户的请求都会卡住（长达 3-10 秒）。
+    """
         
     try:
         # 循环从队列切分出完整句子
@@ -401,6 +486,11 @@ async def websocket_chat(websocket: WebSocket):
             
         # 3. 主任务：驱动大模型生成 (生产者)
         async for chunk in llm_engine.astream_chat(prompt):
+            # 检查打断信号，如果被踩刹车，立刻中止 LLM 推理！
+            if cancel_event.is_set():
+                logger.info("🛑 收到打断信号，中止大模型生成！")
+                break
+            
             # 将新生成的字立刻通过 WebSocket 发给前端 (文字流)
             async with ws_lock:
                 await websocket.send_json({"type": "text", "content": chunk})

@@ -81,7 +81,8 @@ class EdgeTTS(BaseTTS):
         import edge_tts
         from pydub import AudioSegment
 
-        communicate = edge_tts.Communicate(text, voice=self.voice, proxy=self.proxy)
+        # communicate = edge_tts.Communicate(text, voice=self.voice, proxy=self.proxy)
+        communicate = edge_tts.Communicate(text, voice=self.voice)
         audio_bytes = b""
         async for chunk in communicate.stream():
             if chunk["type"] == "audio":
