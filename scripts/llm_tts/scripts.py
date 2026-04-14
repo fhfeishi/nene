@@ -35,12 +35,11 @@ from contextlib import asynccontextmanager
 # ==========================================
 
 import os
-# 强行把镜像站塞进环境变量，天王老子来了也得走国内镜像
+# 走国内镜像
 os.environ["HF_ENDPOINT"] = "https://hf-mirror.com"
 # 强制 Hugging Face 进入离线模式
 os.environ["HF_HUB_OFFLINE"] = "1"
-import warnings
-warnings.filterwarnings("ignore")
+
 
 
 class AppSettings(BaseSettings):
@@ -48,7 +47,8 @@ class AppSettings(BaseSettings):
     gguf_file: str = "/mnt/e/local_models/huggingface/local/Qwen3.5-4B-Q4_1.gguf"  # 0.8B, 4B
     llamacpp_bin: str = "/home/baheas/githubrepos/llama.cpp/build/bin/llama-server"
     koko_model: str = "/mnt/e/local_models/huggingface/cache/hub/models--hexgrad--Kokoro-82M/snapshots/f3ff3571791e39611d31c381e3a41a3af07b4987"
-    qwen_model: str = "/mnt/e/local_models/modelscope/models/Qwen/Qwen3-TTS-12Hz-0___6B-Base"
+    # qwen_model: str = "/mnt/e/local_models/modelscope/models/Qwen/Qwen3-TTS-12Hz-0___6B-Base"
+    qwen_model: str = "/mnt/e/local_models/modelscope/models/Qwen/Qwen3-TTS-12Hz-0___6B-CustomVoice"
     
     llm_port: int = 8080
     ctx_size: int = 4096
@@ -70,6 +70,8 @@ class TextChunker:
     """流式文本分块器（按标点截断）"""
     def __init__(self):
         self.split_pattern = re.compile(r'([。！？；，,!?;\n])')
+        # 匹配 <think>、</think> 等 XML 风格的标签
+        self.tag_pattern = re.compile(r'<[^>]+>')
 
     async def chunk_stream(self, token_queue: asyncio.Queue) -> AsyncGenerator[str, None]:
         buffer = ""
@@ -79,10 +81,18 @@ class TextChunker:
                 if buffer.strip():
                     yield buffer.strip()
                 break
+            
+            # 清理 token 中的特殊标签
+            clean_token = self.tag_pattern.sub('', token)
+            if not clean_token:
+                continue # 如果全是标签被清空了，直接跳过
                 
             buffer += token
             if self.split_pattern.search(token):
-                yield buffer.strip()
+                sentense = buffer.strip()
+                # 空的 sentense 会报错
+                if sentense:
+                    yield sentense
                 buffer = ""
 
 
@@ -164,6 +174,7 @@ class LlamaCppServerLLMcpu:
         logger.info("🛑 正在关闭 LLM 引擎与 llama.cpp 子进程...")
         self._sync_cleanup()
         self._is_ready = False
+        logger.info("✅ 已成功关闭 LLM 引擎与 llama.cpp 子进程")
 
     def _sync_cleanup(self):
         """实际的清理逻辑（同步，供 teardown 和 atexit 复用）"""
@@ -210,7 +221,8 @@ class KokoroTTS(BaseTTS):
     def __init__(self):
         super().__init__()
         self.pipeline = None 
-        self.voice = "zf_xiaoxiao"
+        # self.voice = "zf_xiaoxiao"
+        self.voice = "zm_010"  # zf_001
         
     async def startup(self) -> None:
         logger.info("Initializing KokoroTTS in background...")
@@ -218,8 +230,10 @@ class KokoroTTS(BaseTTS):
         # 将耗时的同步加载过程封装到函数中
         def _load_model():
             from kokoro import KPipeline
-            # self.pipeline = KPipeline(lang_code='z', repo_id='hexgrad/Kokoro-82M')
-            self.pipeline = KPipeline(lang_code='z', repo_id=settings.koko_model, device="cuda")
+            # hexgrad/Kokoro-82M-v1.1-zh  hexgrad/Kokoro-82M
+            rpid = "hexgrad/Kokoro-82M-v1.1-zh"
+            self.pipeline = KPipeline(lang_code='z', repo_id=rpid, device="cuda")  # device: cuda cpu
+            # self.pipeline = KPipeline(lang_code='z', repo_id=settings.koko_model, device="cuda")
             # 预热
             list(self.pipeline("测试", voice=self.voice, speed=1.0))
 
@@ -233,6 +247,11 @@ class KokoroTTS(BaseTTS):
         Kokoro 的推理是 CPU/GPU 密集型且同步阻塞的。如果直接在主线程跑，会导致 FastAPI 卡死。
         利用 asyncio.to_thread 将其丢入后台线程池执行，保证网络服务的并发能力。
         """
+        
+        if not text.strip() or self.pipeline is None:
+            logger.warning(f"跳过无效 TTS 请求: text='{text}', pipeline_loaded={self.pipeline is not None}")
+            return None
+        
         def sync_infer():
             generator = self.pipeline(text, voice=self.voice, speed=1.0)
             for _, _, audio in generator:
@@ -308,7 +327,8 @@ class QwenTTS(BaseTTS):
                 # "Qwen/Qwen3-TTS-12Hz-1.7B-CustomVoice",
                 settings.qwen_model,
                 device_map="cuda:0",
-                dtype=torch.float16
+                dtype=torch.bfloat16,
+                attn_implementation="flash_attention_2",
             )
             torch.set_num_threads(8)
         
@@ -420,12 +440,12 @@ async def background_tts_worker(websocket: WebSocket,
         if tts_type == "edge": engine = EdgeTTS()
         elif tts_type == "qwen": engine = QwenTTS()
         else: engine = KokoroTTS()
-        tts_engines[tts_type] = engine
         
         # 不要忘了调用 startup 来加载模型！
         await engine.startup()
         
         # 加载完后，塞回全局字典，下次别人请求就不用再加载了
+        tts_engines[tts_type] = engine
         websocket.app.state.tts_engines[tts_type] = engine
         logger.info(f"✅ TTS 引擎 {tts_type} 异步加载完毕！")
 
