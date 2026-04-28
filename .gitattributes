@@ -1,49 +1,55 @@
 ########################################################################
 # 1) 全局默认策略
 ########################################################################
-* text=auto eol=lf
+# 自动检测文本。去除了 eol=lf，避免误伤未声明的冷门二进制文件
+* text=auto
 
 ########################################################################
-# 2) 强制二进制的文件
+# 2) 强制二进制的文件 (使用 binary 替代 -text，禁用无意义的 diff)
 ########################################################################
 # 图片
-*.png  -text
-*.jpg  -text
-*.jpeg -text
-*.gif  -text
-*.webp -text
-*.ico  -text
-*.bmp  -text
+*.png  binary
+*.jpg  binary
+*.jpeg binary
+*.gif  binary
+*.webp binary
+*.ico  binary
+*.bmp  binary
 
 # 字体
-*.eot  -text
-*.ttf  -text
-*.otf  -text
-*.woff -text
-*.woff2 -text
+*.eot  binary
+*.ttf  binary
+*.otf  binary
+*.woff binary
+*.woff2 binary
 
-# 音频（语音 RAG 系统）
-*.mp3  -text
-*.wav  -text
-*.ogg  -text
-*.flac -text
-*.aac  -text
-*.m4a  -text
+# 音频（语音/ASR/TTS 系统）
+*.mp3  binary
+*.wav  binary
+*.ogg  binary
+*.flac binary
+*.aac  binary
+*.m4a  binary
 
-# 模型文件
-*.bin  -text
-*.onnx -text
-*.pt   -text
-*.pth  -text
-*.safetensors -text
-*.gguf -text
-*.pkl  -text
+# 模型权重与张量数据
+*.bin  binary
+*.onnx binary
+*.pt   binary
+*.pth  binary
+*.safetensors binary
+*.gguf binary
+*.pkl  binary
 
-# 文档（二进制格式）
-*.pdf  -text
-*.docx -text
-*.doc  -text
-*.xlsx -text
+# 仿真网格与CAD文件
+*.stl  binary
+*.step binary
+*.fbx  binary
+
+# 文档
+*.pdf  binary
+*.docx binary
+*.doc  binary
+*.xlsx binary
 
 ########################################################################
 # 3) 源代码 — 强制文本 + LF
@@ -57,14 +63,19 @@
 *.html text eol=lf
 *.svg  text eol=lf
 
-# 后端 (Python / FastAPI)
+# 后端与算法 (Python / C++)
 *.py   text eol=lf
 *.ipynb text eol=lf
-# grpc
+*.cpp  text eol=lf
+*.hpp  text eol=lf
+*.c    text eol=lf
+*.h    text eol=lf
+
+# 通信/RPC
 *.proto text eol=lf
 
 ########################################################################
-# 4) 配置与数据文件 — 强制文本 + LF
+# 4) 配置、数据与机器人描述文件 — 强制文本 + LF
 ########################################################################
 *.json  text eol=lf
 *.yaml  text eol=lf
@@ -77,10 +88,16 @@
 *.csv   text eol=lf
 *.xml   text eol=lf
 
+# 机器人仿真描述
+*.urdf  text eol=lf
+*.mjcf  text eol=lf
+*.obj   text eol=lf
+*.dae   text eol=lf
+
 # Shell & Docker（必须在 Linux 运行）
 *.sh              text eol=lf
 Dockerfile        text eol=lf
-docker-compose.*  text eol=lf
+docker-compose.* text eol=lf
 .dockerignore     text eol=lf
 
 # Python 锁文件（行尾影响哈希）
