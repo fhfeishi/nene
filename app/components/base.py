@@ -73,7 +73,7 @@ class BaseComponent(ABC, Generic[_ConfigT]):
     @property
     def ready(self) -> bool:
         """只读属性：组件是否已就绪"""
-        return self._is_ready
+        return self._ready
     
     # ── 生命周期 ────────────────────────────────
     @abstractmethod
